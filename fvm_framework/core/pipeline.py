@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 import time
 import numpy as np
-from core.data_container import FVMDataContainer2D
+from .data_container import FVMDataContainer2D
 
 
 class ComputationStage(ABC):
@@ -86,21 +86,27 @@ class ReconstructionStage(ComputationStage):
 
 
 class FluxStage(ComputationStage):
-    """Stage for computing numerical fluxes"""
+    """Stage for computing numerical fluxes using unified spatial discretization"""
     
-    def __init__(self, riemann_solver: str = 'hllc'):
+    def __init__(self, spatial_scheme: str = 'lax_friedrichs', **scheme_params):
         super().__init__("FluxComputation")
-        self.riemann_solver = riemann_solver
+        self.spatial_scheme_name = spatial_scheme
+        self.scheme_params = scheme_params
+        
         # Import here to avoid circular imports
-        from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
-        self.solver = RiemannSolverFactory.create(riemann_solver)
-        self.flux_computer = RiemannFluxComputation(self.solver)
+        from spatial.factory import SpatialDiscretizationFactory
+        self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **scheme_params)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
-        """Compute numerical fluxes"""
+        """Compute numerical fluxes using the selected spatial scheme"""
         def _compute_fluxes():
-            gamma = kwargs.get('gamma', 1.4)
-            self.flux_computer.compute_fluxes(data, gamma)
+            # Get physics equation from kwargs
+            physics_equation = kwargs.get('physics_equation')
+            if physics_equation is None:
+                raise ValueError("FluxStage requires physics_equation in kwargs")
+            
+            # Compute fluxes using unified interface
+            self.spatial_scheme.compute_fluxes(data, physics_equation, **kwargs)
             
         self._time_execution(_compute_fluxes)
 
@@ -126,33 +132,69 @@ class SourceStage(ComputationStage):
 
 
 class TemporalStage(ComputationStage):
-    """Stage for temporal integration"""
+    """Stage for temporal integration using unified spatial discretization"""
     
-    def __init__(self, scheme: str = 'rk3'):
+    def __init__(self, scheme: str = 'rk3', spatial_scheme: str = 'lax_friedrichs', **spatial_params):
         super().__init__("TemporalIntegration")
         self.scheme = scheme
+        self.spatial_scheme_name = spatial_scheme
+        self.spatial_params = spatial_params
+        
         # Import here to avoid circular imports
-        from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction
-        from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
+        from temporal.time_integrators import TimeIntegratorFactory
+        from spatial.factory import SpatialDiscretizationFactory
         
         self.integrator = TimeIntegratorFactory.create(scheme)
-        # Create a simple residual function for flux divergence
-        solver = RiemannSolverFactory.create('hllc')
-        flux_computer = RiemannFluxComputation(solver)
-        self.residual_function = ResidualFunction(flux_computer)
+        self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **spatial_params)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
-        """Perform temporal integration"""
+        """Perform temporal integration using unified spatial discretization"""
         def _time_integrate():
-            dt = kwargs['dt']
-            # Use residual function that computes flux divergence
-            residual = data.compute_residual()
+            dt = kwargs.get('dt')
+            physics_equation = kwargs.get('physics_equation')
             
-            # Simple forward Euler update (can be replaced with integrator)
-            data.state_new[:] = data.state + dt * residual
-            data.swap_states()
+            if dt is None or physics_equation is None:
+                raise ValueError("TemporalStage requires 'dt' and 'physics_equation' in kwargs")
+            
+            # Define residual function that uses our spatial scheme
+            def residual_function(state: np.ndarray) -> np.ndarray:
+                # Temporarily update data state
+                old_state = data.state.copy()
+                data.state = state
+                
+                # Compute fluxes using spatial scheme
+                self.spatial_scheme.compute_fluxes(data, physics_equation, **kwargs)
+                
+                # Compute flux divergence (residual = -∇·F)
+                if hasattr(self.spatial_scheme, 'compute_flux_divergence'):
+                    residual = self.spatial_scheme.compute_flux_divergence(data)
+                else:
+                    # Default flux divergence computation
+                    residual = self._compute_flux_divergence(data)
+                
+                # Restore original state
+                data.state = old_state
+                return residual
+            
+            # Apply time integrator
+            new_state = self.integrator.step(data.state, dt, residual_function)
+            data.state = new_state
             
         self._time_execution(_time_integrate)
+    
+    def _compute_flux_divergence(self, data: FVMDataContainer2D) -> np.ndarray:
+        """Default flux divergence computation"""
+        residual = np.zeros_like(data.state)
+        
+        # Interior points only
+        for i in range(1, data.nx - 1):
+            for j in range(1, data.ny - 1):
+                # Flux divergence: ∇·F = (F_{i+1/2} - F_{i-1/2})/dx + (G_{j+1/2} - G_{j-1/2})/dy
+                flux_div_x = (data.flux_x[:, i+1, j] - data.flux_x[:, i, j]) / data.geometry.dx
+                flux_div_y = (data.flux_y[:, i, j+1] - data.flux_y[:, i, j]) / data.geometry.dy
+                residual[:, i, j] = -(flux_div_x + flux_div_y)
+        
+        return residual
 
 
 class FVMPipeline:
@@ -170,25 +212,27 @@ class FVMPipeline:
     def __init__(self, 
                  boundary_type: str = 'periodic',
                  reconstruction_type: str = 'linear', 
-                 riemann_solver: str = 'hllc',
+                 spatial_scheme: str = 'lax_friedrichs',
                  time_scheme: str = 'rk3',
-                 source_type: Optional[str] = None):
+                 source_type: Optional[str] = None,
+                 **spatial_params):
         """
-        Initialize the FVM pipeline.
+        Initialize the FVM pipeline with unified spatial discretization.
         
         Args:
             boundary_type: Type of boundary conditions
-            reconstruction_type: Spatial reconstruction method
-            riemann_solver: Riemann solver type
+            reconstruction_type: Spatial reconstruction method  
+            spatial_scheme: Spatial discretization scheme ('lax_friedrichs', 'tvdlf', 'hll', etc.)
             time_scheme: Time integration scheme
             source_type: Source term type (None for no sources)
+            **spatial_params: Additional parameters for spatial scheme (e.g., limiter='minmod')
         """
         self.stages: List[ComputationStage] = [
             BoundaryStage(boundary_type),
             ReconstructionStage(reconstruction_type),
-            FluxStage(riemann_solver),
+            FluxStage(spatial_scheme, **spatial_params),
             SourceStage(source_type),
-            TemporalStage(time_scheme)
+            TemporalStage(time_scheme, spatial_scheme, **spatial_params)
         ]
         
         self.total_steps = 0

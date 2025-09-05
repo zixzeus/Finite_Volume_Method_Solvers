@@ -1,30 +1,46 @@
 """
-Spatial discretization module for FVM Framework
+Spatial Discretization Module
 
-This module provides various spatial discretization methods including
-finite volume schemes, Riemann solvers, and reconstruction methods.
+This module provides a unified framework for all spatial discretization methods
+including finite volume, Riemann solver-based, and discontinuous Galerkin methods.
 """
 
-from .finite_volume import (
-    SpatialScheme, LaxFriedrichs, TVDLF, FluxSplitting, UpwindScheme
-)
-from .riemann_solvers import (
-    RiemannSolver, HLLSolver, HLLCSolver, HLLDSolver, ExactRiemannSolver,
-    RiemannSolverFactory, RiemannFluxComputation, AdaptiveRiemannSolver
+from .factory import SpatialDiscretizationFactory, create_spatial_scheme
+from .base import (
+    SpatialDiscretization,
+    FiniteVolumeScheme,
+    RiemannBasedScheme,
+    HighOrderScheme,
+    DiscontinuousGalerkinScheme
 )
 
+# Import specific schemes
+from .lax_friedrichs import LaxFriedrichsScheme
+from .tvd_lax_friedrichs import TVDLFScheme
+from .riemann_schemes import HLLRiemannScheme, HLLCRiemannScheme, HLLDRiemannScheme
+from .dg_scheme import DGScheme
+
 __all__ = [
-    'SpatialScheme',
-    'LaxFriedrichs',
-    'TVDLF', 
-    'FluxSplitting',
-    'UpwindScheme',
-    'RiemannSolver',
-    'HLLSolver',
-    'HLLCSolver', 
-    'HLLDSolver',
-    'ExactRiemannSolver',
-    'RiemannSolverFactory',
-    'RiemannFluxComputation',
-    'AdaptiveRiemannSolver'
+    # Factory
+    'SpatialDiscretizationFactory',
+    'create_spatial_scheme',
+    
+    # Base classes
+    'SpatialDiscretization',
+    'FiniteVolumeScheme', 
+    'RiemannBasedScheme',
+    'HighOrderScheme',
+    'DiscontinuousGalerkinScheme',
+    
+    # Finite volume schemes
+    'LaxFriedrichsScheme',
+    'TVDLFScheme',
+    
+    # Riemann solver schemes
+    'HLLRiemannScheme',
+    'HLLCRiemannScheme', 
+    'HLLDRiemannScheme',
+    
+    # High-order schemes
+    'DGScheme',
 ]

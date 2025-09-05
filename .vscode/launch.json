@@ -2,76 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Framework Demo",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/framework_usage_guide.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": [],
-            "justMyCode": false
-        },
-        {
-            "name": "Blast Wave Test",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/debug_blast_wave.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": [],
-            "justMyCode": false
-        },
-        {
-            "name": "Kelvin-Helmholtz Test",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/debug_kh_instability.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": [],
-            "justMyCode": false
-        },
-        {
-            "name": "DG Method Test",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/debug_dg_method.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": [],
-            "justMyCode": false
-        },
-        {
-            "name": "Riemann Solver Test",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/debug_riemann_solvers.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": [],
-            "justMyCode": false
-        },
-        {
             "name": "Current File",
             "type": "debugpy",
             "request": "launch",
@@ -79,32 +9,11 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
+                "PYTHONPATH": "${workspaceFolder}"
             },
             "python": "/Users/ericzeus/anaconda3/bin/python",
             "args": [],
             "justMyCode": false
         },
-        {
-            "name": "Python: Debug with Arguments",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/fvm_framework"
-            },
-            "python": "/Users/ericzeus/anaconda3/bin/python",
-            "args": ["--debug", "--verbose"],
-            "justMyCode": false
-        },
-        {
-            "name": "Python: Attach to Process",
-            "type": "debugpy",
-            "request": "attach",
-            "processId": "${command:pickProcess}",
-            "justMyCode": false
-        }
     ]
 }

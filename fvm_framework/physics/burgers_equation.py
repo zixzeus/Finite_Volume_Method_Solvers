@@ -13,10 +13,6 @@ Conservative variables: [u, v] where u,v are velocity components
 import numpy as np
 from typing import Tuple, Callable, Optional
 from dataclasses import dataclass
-import sys
-import os
-
-
 from core.data_container import FVMDataContainer2D
 
 

@@ -10,7 +10,7 @@ from typing import Tuple, Callable, Optional, Dict
 from abc import ABC, abstractmethod
 import scipy.special as sp
 
-from ..core.data_container import FVMDataContainer2D, GridGeometry
+from core.data_container import FVMDataContainer2D, GridGeometry
 from .riemann_solvers import RiemannSolver, RiemannSolverFactory
 
 

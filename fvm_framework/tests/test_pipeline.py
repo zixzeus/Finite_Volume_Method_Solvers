@@ -9,7 +9,6 @@ import numpy as np
 from unittest.mock import Mock, patch
 import time
 
-
 from core.pipeline import (
     ComputationStage, BoundaryStage, ReconstructionStage, 
     FluxStage, SourceStage, TemporalStage, FVMPipeline, PipelineMonitor

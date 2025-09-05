@@ -8,12 +8,7 @@ including periodic, reflective, transmissive, and custom boundary conditions.
 from abc import ABC, abstractmethod
 from typing import Callable, Optional, Dict, Any
 import numpy as np
-import sys
-import os
-
-
 from core.data_container import FVMDataContainer2D
-
 
 class BoundaryCondition(ABC):
     """Abstract base class for boundary conditions"""

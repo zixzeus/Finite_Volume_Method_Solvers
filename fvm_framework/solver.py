@@ -9,11 +9,11 @@ import numpy as np
 from typing import Optional, Dict, Any, Callable
 import time
 
-from core.data_container import FVMDataContainer2D, GridGeometry
-from core.pipeline import FVMPipeline, PipelineMonitor
-from boundary.boundary_conditions import BoundaryManager, EulerBoundaryConditions
-from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
-from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
+from .core.data_container import FVMDataContainer2D, GridGeometry
+from .core.pipeline import FVMPipeline, PipelineMonitor
+from .boundary.boundary_conditions import BoundaryManager, EulerBoundaryConditions
+from .spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
+from .temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
 class FVMSolver:
@@ -36,10 +36,11 @@ class FVMSolver:
             'grid': {'nx': 100, 'ny': 100, 'dx': 0.01, 'dy': 0.01},
             'physics': {'gamma': 1.4, 'gas_constant': 287.0},
             'numerical': {
-                'riemann_solver': 'hllc',
+                'spatial_scheme': 'lax_friedrichs',  # Changed from riemann_solver
                 'time_integrator': 'rk3',
                 'cfl_number': 0.5,
-                'boundary_type': 'periodic'
+                'boundary_type': 'periodic',
+                'spatial_params': {}  # Additional params for spatial scheme
             },
             'simulation': {
                 'final_time': 1.0,
@@ -129,8 +130,9 @@ class FVMSolver:
         # Pipeline for monitoring
         self.pipeline = FVMPipeline(
             boundary_type=numerical_config['boundary_type'],
-            riemann_solver=numerical_config['riemann_solver'],
-            time_scheme=numerical_config['time_integrator']
+            spatial_scheme=numerical_config['spatial_scheme'],
+            time_scheme=numerical_config['time_integrator'],
+            **numerical_config.get('spatial_params', {})
         )
     
     def _initialize_monitoring(self):

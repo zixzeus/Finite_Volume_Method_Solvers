@@ -52,7 +52,7 @@ def main():
         if args.module:
             # Run specific module
             loader = unittest.TestLoader()
-            module_name = f'tests.{args.module}'
+            module_name = f'fvm_framework.tests.{args.module}'
             module = __import__(module_name, fromlist=[''])
             suite = loader.loadTestsFromModule(module)
             runner = unittest.TextTestRunner(verbosity=verbosity)
