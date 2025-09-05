@@ -1,0 +1,21 @@
+{
+    "python.defaultInterpreter": "/Users/ericzeus/anaconda3/bin/python",
+    "python.pythonPath": "/Users/ericzeus/anaconda3/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/fvm_framework"
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.analysis.autoSearchPaths": true,
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.autoSearchPaths": true,
+    "cursorpyright.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/fvm_framework"
+    ],
+    "cursorpyright.analysis.typeCheckingMode": "basic"
+}

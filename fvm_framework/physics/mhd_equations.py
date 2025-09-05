@@ -12,8 +12,11 @@ and Bx,By,Bz are magnetic field components.
 import numpy as np
 from typing import Tuple, Callable, Optional
 from dataclasses import dataclass
+import sys
+import os
 
-from ..core.data_container import FVMDataContainer2D
+
+from core.data_container import FVMDataContainer2D
 
 
 @dataclass

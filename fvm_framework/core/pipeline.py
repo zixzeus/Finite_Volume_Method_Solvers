@@ -9,8 +9,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 import time
 import numpy as np
-
-from .data_container import FVMDataContainer2D
+from core.data_container import FVMDataContainer2D
 
 
 class ComputationStage(ABC):
@@ -93,7 +92,7 @@ class FluxStage(ComputationStage):
         super().__init__("FluxComputation")
         self.riemann_solver = riemann_solver
         # Import here to avoid circular imports
-        from ..spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
+        from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
         self.solver = RiemannSolverFactory.create(riemann_solver)
         self.flux_computer = RiemannFluxComputation(self.solver)
         
@@ -133,8 +132,8 @@ class TemporalStage(ComputationStage):
         super().__init__("TemporalIntegration")
         self.scheme = scheme
         # Import here to avoid circular imports
-        from ..temporal.time_integrators import TimeIntegratorFactory, ResidualFunction
-        from ..spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
+        from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction
+        from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
         
         self.integrator = TimeIntegratorFactory.create(scheme)
         # Create a simple residual function for flux divergence

@@ -9,11 +9,12 @@ import numpy as np
 from unittest.mock import Mock, patch
 import time
 
-from ..core.pipeline import (
+
+from core.pipeline import (
     ComputationStage, BoundaryStage, ReconstructionStage, 
     FluxStage, SourceStage, TemporalStage, FVMPipeline, PipelineMonitor
 )
-from ..core.data_container import FVMDataContainer2D, GridGeometry
+from core.data_container import FVMDataContainer2D, GridGeometry
 
 
 class MockStage(ComputationStage):

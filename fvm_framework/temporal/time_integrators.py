@@ -8,8 +8,7 @@ forward Euler, Runge-Kutta schemes (RK2, RK3, RK4), and adaptive time stepping.
 import numpy as np
 from typing import Callable, Optional, Tuple
 from abc import ABC, abstractmethod
-
-from ..core.data_container import FVMDataContainer2D
+from core.data_container import FVMDataContainer2D
 
 
 class TimeIntegrator(ABC):

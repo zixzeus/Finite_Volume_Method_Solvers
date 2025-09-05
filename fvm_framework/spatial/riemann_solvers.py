@@ -8,8 +8,7 @@ HLL, HLLC, and HLLD for compressible flow simulations.
 import numpy as np
 from typing import Tuple, Optional
 from abc import ABC, abstractmethod
-
-from ..core.data_container import FVMDataContainer2D
+from core.data_container import FVMDataContainer2D
 
 
 class RiemannSolver(ABC):

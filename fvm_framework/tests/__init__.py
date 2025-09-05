@@ -9,8 +9,6 @@ import unittest
 import sys
 import os
 
-# Add the parent directory to the path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import all test modules
 from .test_data_container import *

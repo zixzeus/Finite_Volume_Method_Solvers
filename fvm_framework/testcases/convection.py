@@ -9,8 +9,8 @@ import numpy as np
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 
-from ..core.data_container import GridGeometry
-from ..physics.euler_equations import EulerEquations2D
+from core.data_container import GridGeometry
+from physics.euler_equations import EulerEquations2D
 
 
 @dataclass

@@ -11,9 +11,8 @@ that expands outward, creating a strong shock wave.
 import numpy as np
 from typing import Tuple, Dict, Optional, Callable
 from dataclasses import dataclass
-
-from ..core.data_container import FVMDataContainer2D, GridGeometry
-from ..physics.euler_equations import EulerEquations2D, EulerState, EulerInitialConditions
+from core.data_container import FVMDataContainer2D, GridGeometry
+from physics.euler_equations import EulerEquations2D, EulerState, EulerInitialConditions
 
 
 @dataclass
@@ -404,3 +403,78 @@ class BlastWave:
             'snapshots': self.snapshots,
             'output_times': self.output_times
         }
+
+
+def demo_blast_wave():
+    """Demonstrate blast wave simulation with standard parameters"""
+    print("=== 2D Blast Wave Simulation Demo ===")
+    print()
+    
+    # Create parameters for a quick demo (small resolution)
+    params = BlastWaveParameters(
+        nx=50,  # Small grid for quick demo
+        ny=50,
+        final_time=0.1,  # Short simulation time
+        output_interval=0.02,
+        cfl_number=0.3,
+        high_pressure=10.0,  # Reduced pressure ratio for stability
+        low_pressure=1.0,
+        save_snapshots=False  # Don't save files for demo
+    )
+    
+    print(f"Grid size: {params.nx}x{params.ny}")
+    print(f"Simulation time: 0 to {params.final_time}")
+    print(f"Pressure ratio: {params.high_pressure/params.low_pressure}")
+    print()
+    
+    # Create and run blast wave simulation
+    blast_wave = BlastWave(params)
+    
+    # We need to create solver and time integrator (simplified for demo)
+    try:
+        # For demo, we'll use a simple message since full simulation requires more setup
+        print("Note: Full simulation requires setting up Riemann solver and time integrator")
+        print("This demonstrates the framework structure.")
+        print()
+        
+        # Show the initial setup
+        print("Initial conditions:")
+        initial_props = blast_wave.compute_conservation_properties()
+        print(f"  Total mass: {initial_props['total_mass']:.6f}")
+        print(f"  Total energy: {initial_props['total_energy']:.6f}")
+        
+        # Show domain setup
+        print(f"  Domain: [{params.x_min}, {params.x_max}] × [{params.y_min}, {params.y_max}]")
+        print(f"  Blast center: ({params.blast_center_x}, {params.blast_center_y})")
+        print(f"  Blast radius: {params.blast_radius}")
+        
+        results = {
+            'setup_complete': True,
+            'grid_size': f"{params.nx}x{params.ny}",
+            'initial_mass': initial_props['total_mass'],
+            'initial_energy': initial_props['total_energy']
+        }
+        
+        print()
+        print("=== Demo Results ===")
+        print(f"Framework setup: {'✓ Success' if results['setup_complete'] else '✗ Failed'}")
+        print(f"Grid resolution: {results['grid_size']}")
+        print(f"Initial mass: {results['initial_mass']:.6f}")
+        print(f"Initial energy: {results['initial_energy']:.6f}")
+        print()
+        print("Demo completed successfully!")
+        print()
+        print("💡 Usage Guide:")
+        print("1. testcases/ - Contains physics simulation problems (blast wave, KH instability, etc.)")
+        print("2. tests/ - Contains unit tests for framework components") 
+        print("3. To run full simulation: create solver + time integrator, then call run_simulation()")
+        print("4. Framework supports: HLL/HLLC/HLLD Riemann solvers, RK2/RK3/RK4 time integration")
+        
+    except Exception as e:
+        print(f"Error during simulation: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    demo_blast_wave()

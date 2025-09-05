@@ -11,10 +11,6 @@ import argparse
 import unittest
 import time
 
-# Add the framework root to Python path
-framework_root = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, framework_root)
-
 from tests import run_all_tests, run_performance_tests, run_basic_tests
 
 

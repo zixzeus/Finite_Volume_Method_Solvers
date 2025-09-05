@@ -9,11 +9,11 @@ import numpy as np
 from typing import Optional, Dict, Any, Callable
 import time
 
-from .core.data_container import FVMDataContainer2D, GridGeometry
-from .core.pipeline import FVMPipeline, PipelineMonitor
-from .boundary.boundary_conditions import BoundaryManager, EulerBoundaryConditions
-from .spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
-from .temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
+from core.data_container import FVMDataContainer2D, GridGeometry
+from core.pipeline import FVMPipeline, PipelineMonitor
+from boundary.boundary_conditions import BoundaryManager, EulerBoundaryConditions
+from spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
+from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
 class FVMSolver:
@@ -101,7 +101,7 @@ class FVMSolver:
             from .boundary.boundary_conditions import ReflectiveBC
             self.boundary_manager.set_default_boundary(ReflectiveBC())
         elif boundary_type == 'transmissive':
-            from .boundary.boundary_conditions import TransmissiveBC
+            from boundary.boundary_conditions import TransmissiveBC
             self.boundary_manager.set_default_boundary(TransmissiveBC())
     
     def _initialize_solver_components(self):

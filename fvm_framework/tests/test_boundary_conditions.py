@@ -8,11 +8,11 @@ import unittest
 import numpy as np
 from numpy.testing import assert_array_almost_equal, assert_allclose
 
-from ..boundary.boundary_conditions import (
+from boundary.boundary_conditions import (
     PeriodicBC, ReflectiveBC, TransmissiveBC, InflowBC, CustomBC,
     BoundaryManager, EulerBoundaryConditions
 )
-from ..core.data_container import FVMDataContainer2D, GridGeometry
+from core.data_container import FVMDataContainer2D, GridGeometry
 
 
 class TestBasicBoundaryConditions(unittest.TestCase):

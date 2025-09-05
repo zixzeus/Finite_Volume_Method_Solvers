@@ -8,8 +8,7 @@ including Lax-Friedrichs, TVDLF, and higher-order methods with flux limiters.
 import numpy as np
 from typing import Tuple, Callable, Optional
 from abc import ABC, abstractmethod
-
-from ..core.data_container import FVMDataContainer2D
+from core.data_container import FVMDataContainer2D
 
 
 class SpatialScheme(ABC):
