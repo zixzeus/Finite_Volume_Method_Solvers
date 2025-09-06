@@ -9,8 +9,8 @@ import numpy as np
 from typing import Tuple, Callable, Optional, Dict, Any
 import matplotlib.pyplot as plt
 
-from core.solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
-from core.data_container import GridGeometry
+from fvm_framework.core.solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
+from fvm_framework.core.data_container import GridGeometry
 
 
 class TestProblem:

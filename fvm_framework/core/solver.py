@@ -12,8 +12,8 @@ import time
 from .data_container import FVMDataContainer2D, GridGeometry
 from .pipeline import FVMPipeline, PipelineMonitor
 # Import BoundaryManager lazily to avoid circular imports
-from spatial.factory import SpatialDiscretizationFactory
-from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
+from fvm_framework.spatial.factory import SpatialDiscretizationFactory
+from fvm_framework.temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
 class FVMSolver:
@@ -91,19 +91,19 @@ class FVMSolver:
         
     def _initialize_boundary_conditions(self):
         """Initialize boundary condition manager"""
-        from boundary.boundary_conditions import BoundaryManager
+        from fvm_framework.boundary.boundary_conditions import BoundaryManager
         self.boundary_manager = BoundaryManager()
         
         # Set default boundary condition
         boundary_type = self.config['numerical']['boundary_type']
         if boundary_type == 'periodic':
-            from boundary.boundary_conditions import PeriodicBC
+            from fvm_framework.boundary.boundary_conditions import PeriodicBC
             self.boundary_manager.set_default_boundary(PeriodicBC())
         elif boundary_type == 'reflective':
-            from boundary.boundary_conditions import ReflectiveBC
+            from fvm_framework.boundary.boundary_conditions import ReflectiveBC
             self.boundary_manager.set_default_boundary(ReflectiveBC())
         elif boundary_type == 'transmissive':
-            from boundary.boundary_conditions import TransmissiveBC
+            from fvm_framework.boundary.boundary_conditions import TransmissiveBC
             self.boundary_manager.set_default_boundary(TransmissiveBC())
     
     def _initialize_solver_components(self):
@@ -193,13 +193,13 @@ class FVMSolver:
             if isinstance(bc_config, str):
                 # Simple boundary type
                 if bc_config == 'reflective':
-                    from boundary.boundary_conditions import ReflectiveBC
+                    from fvm_framework.boundary.boundary_conditions import ReflectiveBC
                     bc = ReflectiveBC()
                 elif bc_config == 'transmissive':
-                    from boundary.boundary_conditions import TransmissiveBC
+                    from fvm_framework.boundary.boundary_conditions import TransmissiveBC
                     bc = TransmissiveBC()
                 elif bc_config == 'periodic':
-                    from boundary.boundary_conditions import PeriodicBC
+                    from fvm_framework.boundary.boundary_conditions import PeriodicBC
                     bc = PeriodicBC()
                 else:
                     raise ValueError(f"Unknown boundary type: {bc_config}")

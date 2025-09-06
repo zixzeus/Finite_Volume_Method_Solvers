@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 import gc
 
-from ..solver import FVMSolver
+from fvm_framework.core.solver import FVMSolver
 
 
 @dataclass

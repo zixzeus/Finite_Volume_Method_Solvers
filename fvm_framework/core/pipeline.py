@@ -94,7 +94,7 @@ class FluxStage(ComputationStage):
         self.scheme_params = scheme_params
         
         # Import here to avoid circular imports
-        from spatial.factory import SpatialDiscretizationFactory
+        from fvm_framework.spatial.factory import SpatialDiscretizationFactory
         self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **scheme_params)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
@@ -141,8 +141,8 @@ class TemporalStage(ComputationStage):
         self.spatial_params = spatial_params
         
         # Import here to avoid circular imports
-        from temporal.time_integrators import TimeIntegratorFactory
-        from spatial.factory import SpatialDiscretizationFactory
+        from fvm_framework.temporal.time_integrators import TimeIntegratorFactory
+        from fvm_framework.spatial.factory import SpatialDiscretizationFactory
         
         self.integrator = TimeIntegratorFactory.create(scheme)
         self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **spatial_params)

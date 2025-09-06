@@ -6,7 +6,7 @@ stable but dissipative. It's a good baseline method for comparison.
 """
 
 import numpy as np
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 from .base import FiniteVolumeScheme
 
 

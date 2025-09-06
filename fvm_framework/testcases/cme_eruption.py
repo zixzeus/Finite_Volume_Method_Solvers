@@ -9,8 +9,8 @@ import numpy as np
 from typing import Dict, Optional, Callable
 from dataclasses import dataclass
 
-from core.data_container import GridGeometry
-from physics.mhd_equations import MHDEquations2D, MHDState
+from fvm_framework.core.data_container import GridGeometry
+from fvm_framework.physics.mhd_equations import MHDEquations2D, MHDState
 
 
 @dataclass

@@ -8,7 +8,7 @@ methods must inherit from, providing a unified interface.
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 
 
 class SpatialDiscretization(ABC):

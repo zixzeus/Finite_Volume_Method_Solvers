@@ -9,7 +9,7 @@ where ρ is density, u,v,w are velocity components, and E is total energy.
 import numpy as np
 from typing import Tuple, Callable, Optional
 from dataclasses import dataclass
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 
 
 @dataclass

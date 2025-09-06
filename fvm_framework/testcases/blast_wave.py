@@ -11,8 +11,8 @@ that expands outward, creating a strong shock wave.
 import numpy as np
 from typing import Tuple, Dict, Optional, Callable
 from dataclasses import dataclass
-from core.data_container import FVMDataContainer2D, GridGeometry
-from physics.euler_equations import EulerEquations2D, EulerState, EulerInitialConditions
+from fvm_framework.core.data_container import FVMDataContainer2D, GridGeometry
+from fvm_framework.physics.euler_equations import EulerEquations2D, EulerState, EulerInitialConditions
 
 
 @dataclass

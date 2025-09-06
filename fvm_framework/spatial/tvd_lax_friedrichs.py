@@ -6,7 +6,7 @@ Lax-Friedrichs scheme with flux limiters to reduce numerical diffusion.
 """
 
 import numpy as np
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 from .base import FiniteVolumeScheme
 
 

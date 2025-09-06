@@ -10,7 +10,7 @@ import numpy as np
 from typing import Tuple, Dict, Optional, Callable
 from dataclasses import dataclass
 
-from physics.euler_equations import EulerEquations2D, EulerState
+from fvm_framework.physics.euler_equations import EulerEquations2D, EulerState
 
 
 @dataclass

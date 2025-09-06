@@ -5,7 +5,7 @@ This module provides wrappers for existing Riemann solvers to work within
 the unified spatial discretization framework.
 """
 
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 from .base import RiemannBasedScheme
 
 

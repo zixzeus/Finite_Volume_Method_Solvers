@@ -10,7 +10,7 @@ import numpy as np
 from numpy.testing import assert_array_almost_equal, assert_allclose
 
 
-from core.data_container import FVMDataContainer2D, GridGeometry
+from fvm_framework.core.data_container import FVMDataContainer2D, GridGeometry
 
 
 class TestGridGeometry(unittest.TestCase):

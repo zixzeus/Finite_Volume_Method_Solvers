@@ -6,7 +6,7 @@ to work within the spatial discretization framework.
 """
 
 import numpy as np
-from core.data_container import FVMDataContainer2D
+from fvm_framework.core.data_container import FVMDataContainer2D
 from .base import DiscontinuousGalerkinScheme
 from .discontinuous_galerkin import DGSolver2D, DGDataContainer2D, DGIntegrationInterface
 

@@ -9,8 +9,8 @@ import numpy as np
 from typing import Tuple, Dict, Optional, Callable
 from dataclasses import dataclass
 
-from core.data_container import FVMDataContainer2D, GridGeometry
-from physics.euler_equations import EulerEquations2D, EulerState
+from fvm_framework.core.data_container import FVMDataContainer2D, GridGeometry
+from fvm_framework.physics.euler_equations import EulerEquations2D, EulerState
 
 
 @dataclass
