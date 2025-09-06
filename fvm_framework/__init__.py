@@ -14,10 +14,10 @@ from .core.data_container import FVMDataContainer2D, GridGeometry
 from .core.pipeline import FVMPipeline, PipelineMonitor
 
 # Boundary conditions
-# from .boundary.boundary_conditions import (
-#     BoundaryManager, EulerBoundaryConditions,
-#     PeriodicBC, ReflectiveBC, TransmissiveBC, InflowBC
-# )
+from .boundary.boundary_conditions import (
+    BoundaryManager, EulerBoundaryConditions,
+    PeriodicBC, ReflectiveBC, TransmissiveBC, InflowBC
+)
 
 # Spatial discretization - Unified Framework
 from .spatial import SpatialDiscretizationFactory
@@ -26,12 +26,12 @@ from .spatial.riemann_solvers import (
 )
 
 # Temporal integration
-# from .temporal.time_integrators import (
-#     TimeIntegratorFactory, ForwardEuler, RungeKutta2, RungeKutta3, RungeKutta4
-# )
+from .temporal.time_integrators import (
+    TimeIntegratorFactory, ForwardEuler, RungeKutta2, RungeKutta3, RungeKutta4
+)
 
 # Complete solver interface
-# from .solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
+from .core.solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
 
 __version__ = "1.0.0"
 __author__ = "FVM Framework Development Team"

@@ -10,6 +10,8 @@ from .pipeline import (
     FVMPipeline, ComputationStage, BoundaryStage, ReconstructionStage,
     FluxStage, SourceStage, TemporalStage, PipelineMonitor
 )
+# Solver is imported separately to avoid circular imports
+# from .solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
 
 __all__ = [
     'FVMDataContainer2D', 
@@ -22,4 +24,7 @@ __all__ = [
     'SourceStage', 
     'TemporalStage',
     'PipelineMonitor'
+    # 'FVMSolver',
+    # 'create_blast_wave_solver', 
+    # 'create_shock_tube_solver'
 ]

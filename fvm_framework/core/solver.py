@@ -9,11 +9,11 @@ import numpy as np
 from typing import Optional, Dict, Any, Callable
 import time
 
-from .core.data_container import FVMDataContainer2D, GridGeometry
-from .core.pipeline import FVMPipeline, PipelineMonitor
-from .boundary.boundary_conditions import BoundaryManager, EulerBoundaryConditions
-from .spatial.riemann_solvers import RiemannSolverFactory, RiemannFluxComputation
-from .temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
+from .data_container import FVMDataContainer2D, GridGeometry
+from .pipeline import FVMPipeline, PipelineMonitor
+# Import BoundaryManager lazily to avoid circular imports
+from spatial.factory import SpatialDiscretizationFactory
+from temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
 class FVMSolver:
@@ -91,15 +91,16 @@ class FVMSolver:
         
     def _initialize_boundary_conditions(self):
         """Initialize boundary condition manager"""
+        from boundary.boundary_conditions import BoundaryManager
         self.boundary_manager = BoundaryManager()
         
         # Set default boundary condition
         boundary_type = self.config['numerical']['boundary_type']
         if boundary_type == 'periodic':
-            from .boundary.boundary_conditions import PeriodicBC
+            from boundary.boundary_conditions import PeriodicBC
             self.boundary_manager.set_default_boundary(PeriodicBC())
         elif boundary_type == 'reflective':
-            from .boundary.boundary_conditions import ReflectiveBC
+            from boundary.boundary_conditions import ReflectiveBC
             self.boundary_manager.set_default_boundary(ReflectiveBC())
         elif boundary_type == 'transmissive':
             from boundary.boundary_conditions import TransmissiveBC
@@ -109,15 +110,17 @@ class FVMSolver:
         """Initialize spatial and temporal solvers"""
         numerical_config = self.config['numerical']
         
-        # Riemann solver
-        self.riemann_solver = RiemannSolverFactory.create(numerical_config['riemann_solver'])
-        self.flux_computer = RiemannFluxComputation(self.riemann_solver)
+        # Spatial discretization scheme (unified framework)
+        self.spatial_scheme = SpatialDiscretizationFactory.create(
+            numerical_config['spatial_scheme'],
+            **numerical_config.get('spatial_params', {})
+        )
         
         # Time integrator
         self.time_integrator = TimeIntegratorFactory.create(numerical_config['time_integrator'])
         
-        # Residual function
-        self.residual_function = ResidualFunction(self.flux_computer)
+        # Residual function (already works with any spatial scheme)
+        self.residual_function = ResidualFunction(self.spatial_scheme)
         
         # Temporal solver
         self.temporal_solver = TemporalSolver(
@@ -130,7 +133,7 @@ class FVMSolver:
         # Pipeline for monitoring
         self.pipeline = FVMPipeline(
             boundary_type=numerical_config['boundary_type'],
-            spatial_scheme=numerical_config['spatial_scheme'],
+            spatial_scheme=numerical_config['spatial_scheme'],  # Pass scheme name as string
             time_scheme=numerical_config['time_integrator'],
             **numerical_config.get('spatial_params', {})
         )
@@ -190,13 +193,13 @@ class FVMSolver:
             if isinstance(bc_config, str):
                 # Simple boundary type
                 if bc_config == 'reflective':
-                    from .boundary.boundary_conditions import ReflectiveBC
+                    from boundary.boundary_conditions import ReflectiveBC
                     bc = ReflectiveBC()
                 elif bc_config == 'transmissive':
-                    from .boundary.boundary_conditions import TransmissiveBC
+                    from boundary.boundary_conditions import TransmissiveBC
                     bc = TransmissiveBC()
                 elif bc_config == 'periodic':
-                    from .boundary.boundary_conditions import PeriodicBC
+                    from boundary.boundary_conditions import PeriodicBC
                     bc = PeriodicBC()
                 else:
                     raise ValueError(f"Unknown boundary type: {bc_config}")
@@ -235,7 +238,7 @@ class FVMSolver:
         
         print(f"Starting simulation to time {final_time}")
         print(f"Grid: {self.geometry.nx} × {self.geometry.ny}")
-        print(f"Riemann solver: {self.riemann_solver.name}")
+        print(f"Spatial scheme: {self.spatial_scheme.name}")
         print(f"Time integrator: {self.time_integrator.name}")
         print("-" * 50)
         
@@ -397,7 +400,7 @@ def create_blast_wave_solver(nx: int = 200, ny: int = 200,
             'x_min': -domain_size/2, 'y_min': -domain_size/2
         },
         'numerical': {
-            'riemann_solver': 'hllc',
+            'spatial_scheme': 'hllc',  # Use HLLC as spatial scheme
             'time_integrator': 'rk3',
             'cfl_number': 0.4,
             'boundary_type': 'transmissive'
@@ -422,7 +425,7 @@ def create_shock_tube_solver(nx: int = 400, ny: int = 4,
             'x_min': 0.0, 'y_min': 0.0
         },
         'numerical': {
-            'riemann_solver': 'hllc',
+            'spatial_scheme': 'hllc',  # Use HLLC as spatial scheme
             'time_integrator': 'rk3', 
             'cfl_number': 0.9,
             'boundary_type': 'transmissive'
