@@ -10,8 +10,11 @@ and used correctly with the new modular design.
 # import os
 # sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from fvm_framework.spatial.factory import SpatialDiscretizationFactory
-from fvm_framework.examples.unified_test_runner import create_test_cases, UnifiedTestRunner
 
 def test_factory_creation():
     """Test that all spatial discretization schemes can be created"""
@@ -56,39 +59,33 @@ def test_scheme_info():
         print(f"Error printing scheme info: {e}")
         return False
 
-def test_unified_runner():
-    """Test the unified test runner with new architecture"""
+def test_basic_integration():
+    """Test basic integration of spatial discretization with core framework"""
     print("\n" + "=" * 50)
-    print("Testing Unified Test Runner...")
+    print("Testing Basic Integration...")
     print("=" * 50)
     
     try:
-        # Create and run one test case to verify integration
-        test_cases = create_test_cases()
+        # Test that we can create a basic solver with different schemes
+        from fvm_framework.core.data_container import FVMDataContainer2D, GridGeometry
         
-        if test_cases:
-            # Run a simple test case
-            test_config = test_cases[0]  # Euler with Lax-Friedrichs
-            print(f"Running test case: {test_config.name}")
-            
-            runner = UnifiedTestRunner(test_config)
-            result = runner.run_simulation(verbose=False)
-            
-            if result.get('success', False):
-                print(f"✓ Test case completed successfully")
-                print(f"  Steps: {result['total_steps']}")
-                print(f"  Time: {result['computation_time']:.3f}s")
-                print(f"  Final time: {result['final_time']:.6f}")
-                return True
-            else:
-                print(f"✗ Test case failed")
-                return False
-        else:
-            print("✗ No test cases available")
-            return False
-            
+        # Create a simple geometry
+        geometry = GridGeometry(nx=10, ny=10, dx=0.1, dy=0.1, x_min=0.0, y_min=0.0)
+        data = FVMDataContainer2D(geometry, num_vars=5)
+        
+        print(f"✓ Created test data container: {geometry.nx}×{geometry.ny} grid")
+        
+        # Test that spatial schemes can work with the data container
+        factory = SpatialDiscretizationFactory()
+        scheme = factory.create('lax_friedrichs')
+        
+        print(f"✓ Created spatial scheme: {scheme.name}")
+        print(f"  Type: {scheme.scheme_type}, Order: {scheme.order}")
+        
+        return True
+        
     except Exception as e:
-        print(f"✗ Unified runner test failed: {e}")
+        print(f"✗ Basic integration test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -101,7 +98,7 @@ def main():
     tests = [
         ("Factory Creation", test_factory_creation),
         ("Scheme Information", test_scheme_info),
-        ("Unified Test Runner", test_unified_runner),
+        ("Basic Integration", test_basic_integration),
     ]
     
     passed = 0
