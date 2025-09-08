@@ -33,19 +33,23 @@ class TimeIntegrator(ABC):
         pass
     
     def compute_cfl_timestep(self, data: FVMDataContainer2D, cfl_number: float,
-                           gamma: float = 1.4) -> float:
+                           physics_equation=None, **kwargs) -> float:
         """
         Compute time step based on CFL condition.
         
         Args:
             data: FVM data container
             cfl_number: CFL number (typically 0.1-0.9)
-            gamma: Heat capacity ratio
+            physics_equation: Physics equation object to compute wave speed
             
         Returns:
             Maximum stable time step
         """
-        max_wave_speed = data.get_max_wave_speed(gamma)
+        # Use physics equation to compute wave speed
+        if physics_equation is not None:
+            max_wave_speed = physics_equation.compute_max_wave_speed(data)
+        else:
+            max_wave_speed = 1.0  # Default fallback
         
         # Minimum grid spacing
         min_dx = min(data.geometry.dx, data.geometry.dy)
@@ -72,13 +76,24 @@ class ForwardEuler(TimeIntegrator):
     
     def integrate(self, data: FVMDataContainer2D, dt: float,
                  residual_function: Callable, **kwargs) -> None:
-        """Forward Euler integration step"""
+        """Forward Euler integration step for interior cells only"""
         
-        # Compute spatial residual
+        # Compute spatial residual (interior cells only)
         residual = residual_function(data, **kwargs)
         
-        # Update solution: U^{n+1} = U^n + dt * R(U^n)
-        data.state_new[:] = data.state + dt * residual
+        # Update interior cells only: U^{n+1} = U^n + dt * R(U^n)
+        interior_slice = data.interior_slice
+        old_interior = data.state[:, interior_slice[0], interior_slice[1]]
+        data.state_new[:, interior_slice[0], interior_slice[1]] = old_interior + dt * residual
+        
+        # Copy ghost cells to new state (will be updated by boundary conditions)
+        ng = data.ng
+        # Copy left/right ghost cells
+        data.state_new[:, :ng, :] = data.state[:, :ng, :]
+        data.state_new[:, -ng:, :] = data.state[:, -ng:, :]
+        # Copy top/bottom ghost cells  
+        data.state_new[:, :, :ng] = data.state[:, :, :ng]
+        data.state_new[:, :, -ng:] = data.state[:, :, -ng:]
         
         # Swap state arrays
         data.swap_states()
@@ -109,7 +124,6 @@ class RungeKutta2(TimeIntegrator):
         
         # Intermediate update: U_temp = U^n + dt/2 * k1
         data.state[:] = u0 + 0.5 * dt * k1
-        data._primitives_valid = False
         
         # Apply boundary conditions for intermediate state
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
@@ -119,7 +133,6 @@ class RungeKutta2(TimeIntegrator):
         
         # Final update: U^{n+1} = U^n + dt * k2
         data.state[:] = u0 + dt * k2
-        data._primitives_valid = False
 
 
 class RungeKutta3(TimeIntegrator):
@@ -145,19 +158,16 @@ class RungeKutta3(TimeIntegrator):
         # Stage 1: U^{(1)} = U^n + dt * R(U^n)
         k1 = residual_function(data, **kwargs)
         data.state[:] = u0 + dt * k1
-        data._primitives_valid = False
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
         
         # Stage 2: U^{(2)} = 3/4 * U^n + 1/4 * (U^{(1)} + dt * R(U^{(1)}))
         k2 = residual_function(data, **kwargs)
         data.state[:] = 0.75 * u0 + 0.25 * (data.state + dt * k2)
-        data._primitives_valid = False
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
         
         # Stage 3: U^{n+1} = 1/3 * U^n + 2/3 * (U^{(2)} + dt * R(U^{(2)}))
         k3 = residual_function(data, **kwargs)
         data.state[:] = (1.0/3.0) * u0 + (2.0/3.0) * (data.state + dt * k3)
-        data._primitives_valid = False
 
 
 class RungeKutta4(TimeIntegrator):
@@ -187,25 +197,21 @@ class RungeKutta4(TimeIntegrator):
         
         # Stage 2: k2 = R(U^n + dt/2 * k1)
         data.state[:] = u0 + 0.5 * dt * k1
-        data._primitives_valid = False
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
         k2 = residual_function(data, **kwargs)
         
         # Stage 3: k3 = R(U^n + dt/2 * k2)
         data.state[:] = u0 + 0.5 * dt * k2
-        data._primitives_valid = False
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
         k3 = residual_function(data, **kwargs)
         
         # Stage 4: k4 = R(U^n + dt * k3)
         data.state[:] = u0 + dt * k3
-        data._primitives_valid = False
         data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
         k4 = residual_function(data, **kwargs)
         
         # Final update: U^{n+1} = U^n + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
         data.state[:] = u0 + (dt/6.0) * (k1 + 2.0*k2 + 2.0*k3 + k4)
-        data._primitives_valid = False
 
 
 class AdaptiveTimestepper(TimeIntegrator):
@@ -265,8 +271,7 @@ class AdaptiveTimestepper(TimeIntegrator):
             for j in range(stage):
                 data.state[:] += dt * self.a[stage, j] * k[j]
             
-            data._primitives_valid = False
-            data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
+                data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
             k[stage] = residual_function(data, **kwargs)
         
         # Compute 5th and 4th order solutions
@@ -286,7 +291,6 @@ class AdaptiveTimestepper(TimeIntegrator):
         if step_accepted:
             # Accept step
             data.state[:] = u5
-            data._primitives_valid = False
         else:
             # Reject step - restore original state
             data.state[:] = u0
@@ -353,19 +357,24 @@ class ResidualFunction:
     
     def __call__(self, data: FVMDataContainer2D, **kwargs) -> np.ndarray:
         """
-        Compute spatial residual.
+        Compute spatial residual for interior cells only.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             **kwargs: Additional parameters
             
         Returns:
-            Residual array with same shape as state
+            Residual array for interior cells with shape (num_vars, nx, ny)
         """
-        # Compute fluxes
+        # Fill ghost cells first
+        boundary_manager = kwargs.get('boundary_manager')
+        if boundary_manager is not None:
+            boundary_manager.fill_all_ghost_cells(data, **kwargs)
+        
+        # Compute fluxes (including boundary fluxes using ghost cells)
         self.spatial_scheme.compute_fluxes(data, **kwargs)
         
-        # Compute flux divergence
+        # Compute flux divergence for interior cells only
         residual = self._compute_flux_divergence(data)
         
         # Add source terms if present
@@ -376,17 +385,18 @@ class ResidualFunction:
         return residual
     
     def _compute_flux_divergence(self, data: FVMDataContainer2D) -> np.ndarray:
-        """Compute flux divergence using finite volume formula"""
-        residual = np.zeros_like(data.state)
+        """Compute flux divergence for interior cells only"""
+        # Return residual for interior cells only (shape: num_vars, nx, ny)
+        residual = np.zeros((data.num_vars, data.nx, data.ny), dtype=np.float64)
         
-        # X-direction flux differences
+        # X-direction flux differences (interior cells only)
         for i in range(data.nx):
             for j in range(data.ny):
                 # Flux difference: (F_{i+1/2} - F_{i-1/2}) / dx
                 flux_diff_x = (data.flux_x[:, i+1, j] - data.flux_x[:, i, j]) / data.geometry.dx
                 residual[:, i, j] -= flux_diff_x
         
-        # Y-direction flux differences
+        # Y-direction flux differences (interior cells only)
         for i in range(data.nx):
             for j in range(data.ny):
                 # Flux difference: (G_{j+1/2} - G_{j-1/2}) / dy

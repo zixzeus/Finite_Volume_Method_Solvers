@@ -25,8 +25,8 @@ class LaxFriedrichsScheme(FiniteVolumeScheme):
     
     def compute_fluxes(self, data: FVMDataContainer2D, physics_equation, **kwargs) -> None:
         """Compute Lax-Friedrichs fluxes"""
-        # Get maximum wave speed
-        self.alpha = self.get_max_wave_speed(data, physics_equation, **kwargs)
+        # Use physics equation to compute wave speed
+        self.alpha = physics_equation.compute_max_wave_speed(data)
         
         # Compute fluxes in both directions
         self._compute_x_fluxes(data, physics_equation, **kwargs)

@@ -127,7 +127,6 @@ class BlastWave:
                 self.data.state[:, i, j] = self.euler_eq.primitive_to_conservative(state)
         
         # Mark primitives as invalid
-        self.data._primitives_valid = False
         
         print(f"Blast wave initial conditions set:")
         print(f"  Domain: [{self.params.x_min}, {self.params.x_max}] × [{self.params.y_min}, {self.params.y_max}]")

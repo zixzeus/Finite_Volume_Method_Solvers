@@ -7,16 +7,20 @@ in electromagnetic fields.
 Conservative variables: [ρ, ρu, ρv, ρw, E, Bx, By, Bz]
 where ρ is density, u,v,w are velocity components, E is total energy,
 and Bx,By,Bz are magnetic field components.
+
+Note: In 2D MHD simulations, often Bz (out-of-plane component) is evolved
+while Bx,By are computed to maintain ∇·B = 0.
 """
 
 import numpy as np
-from typing import Tuple, Callable, Optional
+from typing import Tuple, Optional
 from dataclasses import dataclass
 from fvm_framework.core.data_container import FVMDataContainer2D
+from .physics_base import PhysicsState, ConservationLaw
 
 
 @dataclass
-class MHDState:
+class MHDState(PhysicsState):
     """Structure for MHD primitive variables"""
     density: float
     velocity_x: float
@@ -29,9 +33,59 @@ class MHDState:
     temperature: Optional[float] = None
     sound_speed: Optional[float] = None
     alfven_speed: Optional[float] = None
+    
+    def to_array(self) -> np.ndarray:
+        """Convert to array: [ρ, u, v, w, p, Bx, By, Bz]"""
+        return np.array([
+            self.density,
+            self.velocity_x,
+            self.velocity_y,
+            self.velocity_z,
+            self.pressure,
+            self.magnetic_x,
+            self.magnetic_y,
+            self.magnetic_z
+        ])
+    
+    @classmethod
+    def from_array(cls, array: np.ndarray) -> 'MHDState':
+        """Create MHDState from array [ρ, u, v, w, p, Bx, By, Bz]"""
+        return cls(
+            density=array[0],
+            velocity_x=array[1],
+            velocity_y=array[2],
+            velocity_z=array[3],
+            pressure=array[4],
+            magnetic_x=array[5],
+            magnetic_y=array[6],
+            magnetic_z=array[7]
+        )
+    
+    def copy(self) -> 'MHDState':
+        """Create a copy of the state"""
+        return MHDState(
+            density=self.density,
+            velocity_x=self.velocity_x,
+            velocity_y=self.velocity_y,
+            velocity_z=self.velocity_z,
+            pressure=self.pressure,
+            magnetic_x=self.magnetic_x,
+            magnetic_y=self.magnetic_y,
+            magnetic_z=self.magnetic_z,
+            temperature=self.temperature,
+            sound_speed=self.sound_speed,
+            alfven_speed=self.alfven_speed
+        )
+    
+    def validate(self) -> bool:
+        """Validate physical consistency"""
+        return (self.density > 0 and 
+                self.pressure > 0 and
+                not np.isnan(self.density) and
+                not np.isnan(self.pressure))
 
 
-class MHDEquations2D:
+class MHDEquations2D(ConservationLaw):
     """
     2D Ideal Magnetohydrodynamics equations.
     
@@ -44,18 +98,15 @@ class MHDEquations2D:
     with the divergence-free constraint ∇·𝐁 = 0
     """
     
-    def __init__(self, gamma: float = 5.0/3.0, gas_constant: float = 1.0):
+    def __init__(self, gamma: float = 5.0/3.0):
         """
         Initialize MHD equations.
         
         Args:
             gamma: Heat capacity ratio (typically 5/3 for monatomic gas)
-            gas_constant: Specific gas constant
         """
+        super().__init__("2D Ideal MHD Equations", num_variables=8, num_dimensions=2)
         self.gamma = gamma
-        self.gas_constant = gas_constant
-        self.name = "2D Ideal MHD Equations"
-        self.num_variables = 8  # [ρ, ρu, ρv, ρw, E, Bx, By, Bz]
     
     def conservative_to_primitive(self, u: np.ndarray) -> MHDState:
         """
@@ -78,7 +129,7 @@ class MHDEquations2D:
         E = u[4]
         Bx, By, Bz = u[5], u[6], u[7]
         
-        # Magnetic pressure
+        # Magnetic pressure (using normalized units: B²/2)
         B_squared = Bx**2 + By**2 + Bz**2
         magnetic_pressure = 0.5 * B_squared
         
@@ -93,7 +144,7 @@ class MHDEquations2D:
         alfven_speed = np.sqrt(B_squared / rho) if rho > 1e-15 else 0.0
         
         # Temperature (if gas constant is provided)
-        temperature = pressure / (rho * self.gas_constant) if self.gas_constant > 0 else None
+        temperature = None  # Temperature calculation not needed in ideal MHD
         
         return MHDState(
             density=rho,
@@ -154,7 +205,7 @@ class MHDEquations2D:
         Bx, By, Bz = state.magnetic_x, state.magnetic_y, state.magnetic_z
         E = u[4]
         
-        # Magnetic pressure
+        # Magnetic pressure (using normalized units: B²/2)
         B_squared = Bx**2 + By**2 + Bz**2
         magnetic_pressure = 0.5 * B_squared
         
@@ -166,7 +217,7 @@ class MHDEquations2D:
             rho * u_vel**2 + p_total - Bx**2,             # x-momentum flux
             rho * u_vel * v_vel - Bx * By,                 # y-momentum flux
             rho * u_vel * w_vel - Bx * Bz,                 # z-momentum flux
-            u_vel * (E + p_total) - Bx * (Bx*u_vel + By*v_vel + Bz*w_vel),  # Energy flux
+            (E + p_total) * u_vel - Bx * (Bx*u_vel + By*v_vel + Bz*w_vel),  # Energy flux
             0.0,                                            # Bx flux (∂Bx/∂t + ∂(0)/∂x = 0)
             By * u_vel - Bx * v_vel,                       # By flux
             Bz * u_vel - Bx * w_vel                        # Bz flux
@@ -191,7 +242,7 @@ class MHDEquations2D:
         Bx, By, Bz = state.magnetic_x, state.magnetic_y, state.magnetic_z
         E = u[4]
         
-        # Magnetic pressure
+        # Magnetic pressure (using normalized units: B²/2)
         B_squared = Bx**2 + By**2 + Bz**2
         magnetic_pressure = 0.5 * B_squared
         
@@ -203,7 +254,7 @@ class MHDEquations2D:
             rho * v_vel * u_vel - By * Bx,                 # x-momentum flux
             rho * v_vel**2 + p_total - By**2,             # y-momentum flux
             rho * v_vel * w_vel - By * Bz,                 # z-momentum flux
-            v_vel * (E + p_total) - By * (Bx*u_vel + By*v_vel + Bz*w_vel),  # Energy flux
+            (E + p_total) * v_vel - By * (Bx*u_vel + By*v_vel + Bz*w_vel),  # Energy flux
             Bx * v_vel - By * u_vel,                       # Bx flux
             0.0,                                            # By flux (∂By/∂t + ∂(0)/∂y = 0)
             Bz * v_vel - By * w_vel                        # Bz flux
@@ -224,48 +275,59 @@ class MHDEquations2D:
         """
         state = self.conservative_to_primitive(u)
         rho = state.density
-        cs = state.sound_speed  # Sound speed
+        cs = state.sound_speed if state.sound_speed is not None else np.sqrt(self.gamma * state.pressure / rho)
         Bx, By, Bz = state.magnetic_x, state.magnetic_y, state.magnetic_z
         
-        # Alfvén speeds
-        ca_x = abs(Bx) / np.sqrt(rho) if rho > 1e-15 else 0.0
-        ca_y = abs(By) / np.sqrt(rho) if rho > 1e-15 else 0.0
+        # Magnetic field components in computational direction
+        if direction == 0:  # x-direction
+            B_perp_squared = By**2 + Bz**2
+            B_parallel = abs(Bx)
+        else:  # y-direction
+            B_perp_squared = Bx**2 + Bz**2
+            B_parallel = abs(By)
         
-        # Fast and slow magnetosonic speeds
+        # Alfvén speed in direction of interest
+        ca = B_parallel / np.sqrt(rho) if rho > 1e-15 else 0.0
+        
+        # Total magnetic field
         B_squared = Bx**2 + By**2 + Bz**2
         va_squared = B_squared / rho if rho > 1e-15 else 0.0
         cs_squared = cs**2
         
-        # Discriminant for magnetosonic speeds
-        discriminant = np.sqrt((cs_squared + va_squared)**2 - 4*cs_squared*va_squared)
+        # Correct discriminant for magnetosonic speeds
+        # cf² = 0.5 * [(cs² + va²) + √((cs² + va²)² - 4cs²(Bₙ²/ρ))]
+        # cs² = 0.5 * [(cs² + va²) - √((cs² + va²)² - 4cs²(Bₙ²/ρ))]
+        sum_speeds = cs_squared + va_squared
+        B_normal_squared = B_parallel**2 / rho if rho > 1e-15 else 0.0
+        discriminant_squared = sum_speeds**2 - 4*cs_squared*B_normal_squared
+        discriminant = np.sqrt(max(discriminant_squared, 0.0))
         
-        cf = np.sqrt(0.5 * (cs_squared + va_squared + discriminant))  # Fast speed
-        slow_speed_squared = 0.5 * (cs_squared + va_squared - discriminant)
-        cs_slow = np.sqrt(max(slow_speed_squared, 0.0))  # Slow speed
+        cf = np.sqrt(0.5 * (sum_speeds + discriminant))  # Fast magnetosonic speed
+        cs_slow = np.sqrt(max(0.5 * (sum_speeds - discriminant), 0.0))  # Slow magnetosonic speed
         
         if direction == 0:  # x-direction
             u_vel = state.velocity_x
             eigenvals = np.array([
-                u_vel - cf,      # Fast wave (left)
-                u_vel - ca_x,    # Alfvén wave (left)
-                u_vel - cs_slow, # Slow wave (left)
+                u_vel - cf,      # Fast magnetosonic wave (backward)
+                u_vel - ca,      # Alfvén wave (backward)
+                u_vel - cs_slow, # Slow magnetosonic wave (backward)
                 u_vel,           # Entropy wave
-                u_vel + cs_slow, # Slow wave (right)
-                u_vel + ca_x,    # Alfvén wave (right)
-                u_vel + cf,      # Fast wave (right)
-                u_vel            # Divergence wave
+                u_vel,           # Divergence wave (∇·B = 0)
+                u_vel + cs_slow, # Slow magnetosonic wave (forward)
+                u_vel + ca,      # Alfvén wave (forward)
+                u_vel + cf       # Fast magnetosonic wave (forward)
             ])
         else:  # y-direction
             v_vel = state.velocity_y
             eigenvals = np.array([
-                v_vel - cf,      # Fast wave (left)
-                v_vel - ca_y,    # Alfvén wave (left)
-                v_vel - cs_slow, # Slow wave (left)
+                v_vel - cf,      # Fast magnetosonic wave (backward)
+                v_vel - ca,      # Alfvén wave (backward)
+                v_vel - cs_slow, # Slow magnetosonic wave (backward)
                 v_vel,           # Entropy wave
-                v_vel + cs_slow, # Slow wave (right)
-                v_vel + ca_y,    # Alfvén wave (right)
-                v_vel + cf,      # Fast wave (right)
-                v_vel            # Divergence wave
+                v_vel,           # Divergence wave (∇·B = 0)
+                v_vel + cs_slow, # Slow magnetosonic wave (forward)
+                v_vel + ca,      # Alfvén wave (forward)
+                v_vel + cf       # Fast magnetosonic wave (forward)
             ])
         
         return eigenvals
@@ -331,109 +393,54 @@ class MHDEquations2D:
             data.state[5] -= correction_factor * np.gradient(div_B, data.geometry.dx, axis=0)
             data.state[6] -= correction_factor * np.gradient(div_B, data.geometry.dy, axis=1)
 
+    # Additional methods required by base class
+    
+    def compute_pressure(self, state: np.ndarray) -> float:
+        """Compute gas pressure from conservative variables"""
+        rho, rho_u, rho_v, rho_w, E, Bx, By, Bz = state
+        
+        # Kinetic energy
+        kinetic_energy = 0.5 * (rho_u**2 + rho_v**2 + rho_w**2) / rho
+        
+        # Magnetic energy
+        magnetic_energy = 0.5 * (Bx**2 + By**2 + Bz**2)
+        
+        # Gas pressure (internal energy)
+        internal_energy = E - kinetic_energy - magnetic_energy
+        pressure = (self.gamma - 1.0) * internal_energy
+        
+        return max(pressure, 1e-10)  # Ensure positive pressure
+    
+    def get_variable_names(self) -> list:
+        """Get names of conservative variables"""
+        return ['density', 'momentum_x', 'momentum_y', 'momentum_z', 
+                'energy', 'magnetic_x', 'magnetic_y', 'magnetic_z']
+    
+    def get_primitive_names(self) -> list:
+        """Get names of primitive variables"""
+        return ['density', 'velocity_x', 'velocity_y', 'velocity_z',
+                'pressure', 'magnetic_x', 'magnetic_y', 'magnetic_z']
+    
+    def validate_state(self, state: np.ndarray) -> bool:
+        """Validate physical consistency of MHD state"""
+        if not super().validate_state(state):
+            return False
+        
+        rho, rho_u, rho_v, rho_w, E, Bx, By, Bz = state
+        
+        # Check positive density
+        if rho <= 0:
+            return False
+        
+        # Check positive gas pressure
+        kinetic_energy = 0.5 * (rho_u**2 + rho_v**2 + rho_w**2) / rho
+        magnetic_energy = 0.5 * (Bx**2 + By**2 + Bz**2)
+        internal_energy = E - kinetic_energy - magnetic_energy
+        gas_pressure = (self.gamma - 1.0) * internal_energy
+        
+        if gas_pressure <= 0:
+            return False
+        
+        return True
 
-class MHDInitialConditions:
-    """Common initial conditions for MHD equations"""
-    
-    @staticmethod
-    def harris_current_sheet(thickness: float = 0.1, B0: float = 1.0, 
-                           density_ratio: float = 0.1, gamma: float = 5.0/3.0) -> Callable:
-        """
-        Harris current sheet initial condition for magnetic reconnection.
-        
-        This creates a current sheet with antiparallel magnetic fields
-        that can undergo magnetic reconnection.
-        
-        Args:
-            thickness: Current sheet thickness
-            B0: Magnetic field strength
-            density_ratio: Density contrast across sheet
-            gamma: Heat capacity ratio
-            
-        Returns:
-            Function that returns initial state at any (x, y)
-        """
-        def initial_condition(x: float, y: float, **kwargs) -> np.ndarray:
-            # Magnetic field configuration (Harris sheet)
-            Bx = B0 * np.tanh(y / thickness)
-            By = 0.0
-            Bz = 0.0
-            
-            # Density profile
-            density = 1.0 + density_ratio / np.cosh(y / thickness)**2
-            
-            # Pressure balance (total pressure constant)
-            magnetic_pressure = 0.5 * (Bx**2 + By**2 + Bz**2)
-            pressure = 0.5 * B0**2 - magnetic_pressure + 0.1  # Background pressure
-            pressure = max(pressure, 0.01)  # Ensure positive pressure
-            
-            # Velocities (initially at rest)
-            velocity_x = 0.0
-            velocity_y = 0.0
-            velocity_z = 0.0
-            
-            state = MHDState(
-                density=density,
-                velocity_x=velocity_x,
-                velocity_y=velocity_y,
-                velocity_z=velocity_z,
-                pressure=pressure,
-                magnetic_x=Bx,
-                magnetic_y=By,
-                magnetic_z=Bz
-            )
-            
-            mhd_eq = MHDEquations2D(gamma)
-            return mhd_eq.primitive_to_conservative(state)
-        
-        return initial_condition
-    
-    @staticmethod
-    def orszag_tang_vortex(gamma: float = 5.0/3.0) -> Callable:
-        """
-        Orszag-Tang vortex initial condition.
-        
-        This is a classic MHD test problem featuring the interaction
-        of magnetic and kinetic energy leading to turbulence.
-        
-        Args:
-            gamma: Heat capacity ratio
-            
-        Returns:
-            Function that returns initial state at any (x, y)
-        """
-        def initial_condition(x: float, y: float, **kwargs) -> np.ndarray:
-            # Normalize coordinates to [0, 2π]
-            x_norm = 2 * np.pi * x
-            y_norm = 2 * np.pi * y
-            
-            # Initial conditions
-            density = gamma**2
-            pressure = gamma
-            
-            # Velocity field
-            velocity_x = -np.sin(y_norm)
-            velocity_y = np.sin(x_norm)
-            velocity_z = 0.0
-            
-            # Magnetic field
-            B0 = 1.0 / np.sqrt(4 * np.pi)
-            magnetic_x = -B0 * np.sin(y_norm)
-            magnetic_y = B0 * np.sin(2 * x_norm)
-            magnetic_z = 0.0
-            
-            state = MHDState(
-                density=density,
-                velocity_x=velocity_x,
-                velocity_y=velocity_y,
-                velocity_z=velocity_z,
-                pressure=pressure,
-                magnetic_x=magnetic_x,
-                magnetic_y=magnetic_y,
-                magnetic_z=magnetic_z
-            )
-            
-            mhd_eq = MHDEquations2D(gamma)
-            return mhd_eq.primitive_to_conservative(state)
-        
-        return initial_condition
+

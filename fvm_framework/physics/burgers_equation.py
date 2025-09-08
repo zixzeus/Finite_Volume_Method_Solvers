@@ -11,26 +11,48 @@ Conservative variables: [u, v] where u,v are velocity components
 """
 
 import numpy as np
-from typing import Tuple, Callable, Optional
+from typing import Optional
 from dataclasses import dataclass
 from fvm_framework.core.data_container import FVMDataContainer2D
+from .physics_base import PhysicsState, ConservationLaw
 
 
 @dataclass
-class BurgersState:
+class BurgersState(PhysicsState):
     """Structure for Burgers equation variables"""
     u_velocity: float
     v_velocity: float
     viscosity: Optional[float] = 0.01
+    
+    def to_array(self) -> np.ndarray:
+        """Convert to array: [u, v]"""
+        return np.array([self.u_velocity, self.v_velocity])
+    
+    @classmethod
+    def from_array(cls, array: np.ndarray) -> 'BurgersState':
+        """Create BurgersState from array [u, v]"""
+        return cls(u_velocity=array[0], v_velocity=array[1])
+    
+    def copy(self) -> 'BurgersState':
+        """Create a copy of the state"""
+        return BurgersState(
+            u_velocity=self.u_velocity,
+            v_velocity=self.v_velocity,
+            viscosity=self.viscosity
+        )
+    
+    def validate(self) -> bool:
+        """Validate physical consistency"""
+        return (not np.isnan(self.u_velocity) and 
+                not np.isnan(self.v_velocity))
 
 
-class BurgersEquation2D:
+class BurgersEquation2D(ConservationLaw):
     """2D Burgers' equation implementation"""
     
     def __init__(self, viscosity: float = 0.01):
+        super().__init__("2D Burgers Equation", num_variables=2, num_dimensions=2)
         self.viscosity = viscosity
-        self.name = "Burgers2D"
-        self.num_vars = 2
     
     def conservative_to_primitive(self, conservative: np.ndarray) -> np.ndarray:
         """Convert conservative to primitive variables (trivial for Burgers)"""
@@ -91,61 +113,13 @@ class BurgersEquation2D:
             # Apply viscous terms
             data.state[0] += dt * self.viscosity * (d2u_dx2 + d2u_dy2)
             data.state[1] += dt * self.viscosity * (d2v_dx2 + d2v_dy2)
+    
+    def get_variable_names(self) -> list:
+        """Get names of conservative variables"""
+        return ['u_velocity', 'v_velocity']
+    
+    def get_primitive_names(self) -> list:
+        """Get names of primitive variables"""
+        return ['u_velocity', 'v_velocity']
 
 
-class BurgersInitialConditions:
-    """Initial condition generators for Burgers equation"""
-    
-    @staticmethod
-    def sine_wave(data: FVMDataContainer2D, amplitude: float = 1.0, 
-                  wave_number: float = 2.0) -> None:
-        """Initialize with sine wave"""
-        geometry = data.geometry
-        
-        for i in range(geometry.nx):
-            for j in range(geometry.ny):
-                x = geometry.x_min + (i + 0.5) * geometry.dx
-                y = geometry.y_min + (j + 0.5) * geometry.dy
-                
-                data.state[0, i, j] = amplitude * np.sin(wave_number * np.pi * x)
-                data.state[1, i, j] = amplitude * np.sin(wave_number * np.pi * y)
-    
-    @staticmethod
-    def gaussian_pulse(data: FVMDataContainer2D, center_x: float = 0.5, 
-                      center_y: float = 0.5, sigma: float = 0.1) -> None:
-        """Initialize with Gaussian pulse"""
-        geometry = data.geometry
-        
-        for i in range(geometry.nx):
-            for j in range(geometry.ny):
-                x = geometry.x_min + (i + 0.5) * geometry.dx
-                y = geometry.y_min + (j + 0.5) * geometry.dy
-                
-                r_sq = (x - center_x)**2 + (y - center_y)**2
-                gaussian = np.exp(-r_sq / (2 * sigma**2))
-                
-                data.state[0, i, j] = gaussian
-                data.state[1, i, j] = gaussian
-    
-    @staticmethod
-    def shock_interaction(data: FVMDataContainer2D) -> None:
-        """Initialize for shock interaction test"""
-        geometry = data.geometry
-        
-        for i in range(geometry.nx):
-            for j in range(geometry.ny):
-                x = geometry.x_min + (i + 0.5) * geometry.dx
-                y = geometry.y_min + (j + 0.5) * geometry.dy
-                
-                if x < 0.5 and y < 0.5:
-                    data.state[0, i, j] = 1.0
-                    data.state[1, i, j] = 1.0
-                elif x >= 0.5 and y < 0.5:
-                    data.state[0, i, j] = -1.0
-                    data.state[1, i, j] = 1.0
-                elif x < 0.5 and y >= 0.5:
-                    data.state[0, i, j] = 1.0
-                    data.state[1, i, j] = -1.0
-                else:
-                    data.state[0, i, j] = -1.0
-                    data.state[1, i, j] = -1.0

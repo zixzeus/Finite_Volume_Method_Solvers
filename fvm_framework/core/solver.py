@@ -34,13 +34,28 @@ class FVMSolver:
         # Default configuration
         self.config = {
             'grid': {'nx': 100, 'ny': 100, 'dx': 0.01, 'dy': 0.01},
-            'physics': {'gamma': 1.4, 'gas_constant': 287.0},
+            'physics': {
+                'equation': 'euler',  # Physics equation type: 'euler', 'burgers', 'advection', 'mhd', 'sound'
+                'params': {
+                    # Common parameters
+                    'gamma': 1.4,
+                    'gas_constant': 287.0,
+                    # Burgers equation parameters
+                    'viscosity': 0.01,
+                    # Advection equation parameters
+                    'advection_x': 1.0,
+                    'advection_y': 0.0,
+                    # Sound wave equation parameters
+                    'sound_speed': 1.0,
+                    'density': 1.0
+                }
+            },
             'numerical': {
-                'spatial_scheme': 'lax_friedrichs',  # Changed from riemann_solver
+                'spatial_scheme': 'lax_friedrichs',
                 'time_integrator': 'rk3',
                 'cfl_number': 0.5,
                 'boundary_type': 'periodic',
-                'spatial_params': {}  # Additional params for spatial scheme
+                'spatial_params': {}
             },
             'simulation': {
                 'final_time': 1.0,
@@ -86,8 +101,20 @@ class FVMSolver:
         )
     
     def _initialize_data_container(self):
-        """Initialize data container"""
-        self.data = FVMDataContainer2D(self.geometry, num_vars=5)
+        """Initialize data container with ghost cells"""
+        physics_type = self.config['physics']['equation']
+        
+        # Determine number of variables based on physics equation
+        num_vars_map = {
+            'euler': 5,     # [rho, rho*u, rho*v, rho*w, E]
+            'burgers': 2,   # [u, v] 
+            'advection': 1, # [u]
+            'mhd': 8,       # [rho, rho*u, rho*v, rho*w, E, Bx, By, Bz]
+            'sound': 3      # [p, u, v]
+        }
+        num_vars = num_vars_map.get(physics_type, 5)
+        
+        self.data = FVMDataContainer2D(self.geometry, num_vars=num_vars, num_ghost=2)
         
     def _initialize_boundary_conditions(self):
         """Initialize boundary condition manager"""
@@ -175,8 +202,6 @@ class FVMSolver:
                 state_ij = init_function(X[i, j], Y[i, j])
                 self.data.state[:, i, j] = state_ij
         
-        # Invalidate primitive cache
-        self.data._primitives_valid = False
         self.is_initialized = True
         
         print(f"Initial conditions set on {self.geometry.nx} × {self.geometry.ny} grid")
@@ -204,18 +229,42 @@ class FVMSolver:
                 else:
                     raise ValueError(f"Unknown boundary type: {bc_config}")
             elif isinstance(bc_config, dict):
-                # Detailed boundary configuration
-                if bc_config['type'] == 'inflow':
-                    bc = EulerBoundaryConditions.subsonic_inflow(**bc_config['params'])
-                elif bc_config['type'] == 'outflow':
-                    bc = EulerBoundaryConditions.subsonic_outflow(bc_config['params']['pressure'])
-                else:
-                    raise ValueError(f"Unknown boundary configuration: {bc_config}")
+                # Complex boundary configurations not supported in generic solver
+                raise ValueError(f"Complex boundary configurations not supported: {bc_config}. Use boundary condition objects directly.")
             else:
                 # Custom boundary condition object
                 bc = bc_config
             
             self.boundary_manager.set_boundary(region, bc)
+    
+    def _create_physics_equation(self):
+        """Create physics equation based on configuration"""
+        equation_type = self.config['physics']['equation']
+        params = self.config['physics']['params']
+        
+        if equation_type == 'euler':
+            from fvm_framework.physics.euler_equations import EulerEquations2D
+            return EulerEquations2D(params.get('gamma', 1.4))
+        elif equation_type == 'burgers':
+            from fvm_framework.physics.burgers_equation import BurgersEquation2D
+            return BurgersEquation2D(params.get('viscosity', 0.01))
+        elif equation_type == 'advection':
+            from fvm_framework.physics.advection_equation import AdvectionEquation2D
+            return AdvectionEquation2D(
+                params.get('advection_x', 1.0), 
+                params.get('advection_y', 0.0)
+            )
+        elif equation_type == 'mhd':
+            from fvm_framework.physics.mhd_equations import MHDEquations2D
+            return MHDEquations2D(params.get('gamma', 5.0/3.0))
+        elif equation_type == 'sound':
+            from fvm_framework.physics.sound_wave_equations import SoundWaveEquations2D
+            return SoundWaveEquations2D(
+                params.get('sound_speed', 1.0),
+                params.get('density', 1.0)
+            )
+        else:
+            raise ValueError(f"Unknown physics equation: {equation_type}")
     
     def solve(self, final_time: Optional[float] = None, max_steps: Optional[int] = None):
         """
@@ -227,6 +276,9 @@ class FVMSolver:
         """
         if not self.is_initialized:
             raise RuntimeError("Initial conditions must be set before solving")
+        
+        # Create physics equation based on configuration
+        physics_equation = self._create_physics_equation()
         
         # Determine stopping criteria
         if final_time is None:
@@ -243,7 +295,7 @@ class FVMSolver:
         print("-" * 50)
         
         # Main time loop
-        while self.current_time < final_time:
+        while self.current_time is not None and final_time is not None and self.current_time < final_time:
             if max_steps and self.time_step >= max_steps:
                 break
                 
@@ -266,16 +318,16 @@ class FVMSolver:
                 
                 self.temporal_solver.solve_n_steps(
                     self.data, 1,
-                    gamma=self.config['physics']['gamma'],
-                    boundary_type=self.config['numerical']['boundary_type']
+                    boundary_manager=self.boundary_manager,
+                    **self.config['physics']['params']
                 )
                 
                 self.temporal_solver.current_dt = old_dt
             else:
                 self.temporal_solver.solve_n_steps(
                     self.data, 1,
-                    gamma=self.config['physics']['gamma'],
-                    boundary_type=self.config['numerical']['boundary_type']
+                    boundary_manager=self.boundary_manager,
+                    **self.config['physics']['params']
                 )
             
             # Update our time and step
@@ -298,9 +350,12 @@ class FVMSolver:
             
             if self.time_step % self.config['simulation']['monitor_interval'] == 0:
                 conservation_error = self.data.get_conservation_error()
-                max_wave_speed = self.data.get_max_wave_speed(self.config['physics']['gamma'])
                 self.statistics['conservation_errors'].append(conservation_error)
-                self.statistics['max_wave_speeds'].append(max_wave_speed)
+                
+                # Compute wave speed if physics equation provided
+                if physics_equation is not None:
+                    max_wave_speed = physics_equation.compute_max_wave_speed(self.data)
+                    self.statistics['max_wave_speeds'].append(max_wave_speed)
             
             # Output progress
             if self.current_time - last_output_time >= output_interval or \
@@ -322,7 +377,9 @@ class FVMSolver:
     
     def _print_progress(self, step_time: float):
         """Print simulation progress"""
-        max_speed = self.data.get_max_wave_speed(self.config['physics']['gamma'])
+        # Use current physics equation to compute wave speed
+        physics = self._create_physics_equation()
+        max_speed = physics.compute_max_wave_speed(self.data)
         dt = self.temporal_solver.current_dt
         
         print(f"Step: {self.time_step:8d}, Time: {self.current_time:.6f}, "
@@ -342,14 +399,20 @@ class FVMSolver:
             avg_step_time = np.mean(self.statistics['computation_times'])
             print(f"Average computation time per step: {avg_step_time:.6f} seconds")
     
-    def get_solution(self) -> Dict[str, np.ndarray]:
+    def get_solution(self) -> Dict[str, Any]:
         """
         Get current solution state.
         
         Returns:
             Dictionary containing solution arrays
         """
-        primitives = self.data.get_primitives(self.config['physics']['gamma'])
+        # Use current physics equation to compute primitives
+        physics = self._create_physics_equation()
+        
+        # Return basic solution data (physics-agnostic)
+        solution_data = {
+            'conservative': self.data.state.copy(),
+        }
         
         # Create coordinate arrays
         x = np.linspace(self.geometry.x_min + 0.5 * self.geometry.dx,
@@ -364,11 +427,6 @@ class FVMSolver:
         return {
             'x': X,
             'y': Y,
-            'density': primitives[0],
-            'velocity_x': primitives[1],
-            'velocity_y': primitives[2],
-            'velocity_z': primitives[3],
-            'pressure': primitives[4],
             'conservative': self.data.state.copy(),
             'current_time': self.current_time,
             'time_step': self.time_step

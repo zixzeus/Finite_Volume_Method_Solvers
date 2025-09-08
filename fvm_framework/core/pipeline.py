@@ -157,28 +157,21 @@ class TemporalStage(ComputationStage):
                 raise ValueError("TemporalStage requires 'dt' and 'physics_equation' in kwargs")
             
             # Define residual function that uses our spatial scheme
-            def residual_function(state: np.ndarray) -> np.ndarray:
-                # Temporarily update data state
-                old_state = data.state.copy()
-                data.state = state
-                
+            def residual_function(data_container: FVMDataContainer2D, **res_kwargs) -> np.ndarray:
                 # Compute fluxes using spatial scheme
-                self.spatial_scheme.compute_fluxes(data, physics_equation, **kwargs)
+                self.spatial_scheme.compute_fluxes(data_container, physics_equation, **kwargs)
                 
                 # Compute flux divergence (residual = -∇·F)
                 if hasattr(self.spatial_scheme, 'compute_flux_divergence'):
-                    residual = self.spatial_scheme.compute_flux_divergence(data)
+                    residual = self.spatial_scheme.compute_flux_divergence(data_container)
                 else:
                     # Default flux divergence computation
-                    residual = self._compute_flux_divergence(data)
+                    residual = self._compute_flux_divergence(data_container)
                 
-                # Restore original state
-                data.state = old_state
                 return residual
             
             # Apply time integrator
-            new_state = self.integrator.step(data.state, dt, residual_function)
-            data.state = new_state
+            self.integrator.integrate(data, dt, residual_function, **kwargs)
             
         self._time_execution(_time_integrate)
     
@@ -321,7 +314,7 @@ class PipelineMonitor:
         self.conservation_history = []
         self.max_wave_speed_history = []
         
-    def update(self, data: FVMDataContainer2D, dt: float, gamma: float = 1.4):
+    def update(self, data: FVMDataContainer2D, dt: float, physics_equation=None):
         """Update monitoring data"""
         self.step_count += 1
         
@@ -331,8 +324,9 @@ class PipelineMonitor:
             self.conservation_history.append(conservation.copy())
             
             # Track maximum wave speed for stability
-            max_speed = data.get_max_wave_speed(gamma)
-            self.max_wave_speed_history.append(max_speed)
+            if physics_equation is not None:
+                max_speed = physics_equation.compute_max_wave_speed(data)
+                self.max_wave_speed_history.append(max_speed)
             
     def get_conservation_drift(self) -> np.ndarray:
         """Get conservation drift over time"""

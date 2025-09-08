@@ -135,8 +135,6 @@ class RayleighTaylorInstability:
                 # Convert to conservative variables
                 self.data.state[:, i, j] = self.euler_eq.primitive_to_conservative(state)
         
-        self.data._primitives_valid = False
-        
         print(f"Rayleigh-Taylor instability initial conditions set:")
         print(f"  Domain: [{self.params.x_min}, {self.params.x_max}] × [{self.params.y_min}, {self.params.y_max}]")
         print(f"  Grid: {nx} × {ny}")

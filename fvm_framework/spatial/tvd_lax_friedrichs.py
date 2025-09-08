@@ -36,8 +36,8 @@ class TVDLFScheme(FiniteVolumeScheme):
     
     def compute_fluxes(self, data: FVMDataContainer2D, physics_equation, **kwargs) -> None:
         """Compute TVDLF fluxes with slope limiting"""
-        # Get maximum wave speed
-        self.alpha = self.get_max_wave_speed(data, physics_equation, **kwargs)
+        # Use physics equation to compute wave speed
+        self.alpha = physics_equation.compute_max_wave_speed(data)
         
         # Compute limited slopes
         slopes_x = self._compute_limited_slopes_x(data)

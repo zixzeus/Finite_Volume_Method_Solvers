@@ -7,13 +7,14 @@ where ρ is density, u,v,w are velocity components, and E is total energy.
 """
 
 import numpy as np
-from typing import Tuple, Callable, Optional
+from typing import Tuple, Optional
 from dataclasses import dataclass
 from fvm_framework.core.data_container import FVMDataContainer2D
+from .physics_base import PhysicsState, ConservationLaw
 
 
 @dataclass
-class EulerState:
+class EulerState(PhysicsState):
     """Structure for Euler equation primitive variables"""
     density: float
     velocity_x: float
@@ -22,9 +23,49 @@ class EulerState:
     pressure: float
     temperature: Optional[float] = None
     sound_speed: Optional[float] = None
+    
+    def to_array(self) -> np.ndarray:
+        """Convert to array: [ρ, u, v, w, p]"""
+        return np.array([
+            self.density,
+            self.velocity_x,
+            self.velocity_y, 
+            self.velocity_z,
+            self.pressure
+        ])
+    
+    @classmethod
+    def from_array(cls, array: np.ndarray) -> 'EulerState':
+        """Create EulerState from array [ρ, u, v, w, p]"""
+        return cls(
+            density=array[0],
+            velocity_x=array[1],
+            velocity_y=array[2],
+            velocity_z=array[3],
+            pressure=array[4]
+        )
+    
+    def copy(self) -> 'EulerState':
+        """Create a copy of the state"""
+        return EulerState(
+            density=self.density,
+            velocity_x=self.velocity_x,
+            velocity_y=self.velocity_y,
+            velocity_z=self.velocity_z,
+            pressure=self.pressure,
+            temperature=self.temperature,
+            sound_speed=self.sound_speed
+        )
+    
+    def validate(self) -> bool:
+        """Validate physical consistency"""
+        return (self.density > 0 and 
+                self.pressure > 0 and
+                not np.isnan(self.density) and
+                not np.isnan(self.pressure))
 
 
-class EulerEquations2D:
+class EulerEquations2D(ConservationLaw):
     """
     2D Euler equations for compressible gas dynamics.
     
@@ -44,10 +85,9 @@ class EulerEquations2D:
             gamma: Heat capacity ratio (Cp/Cv)
             gas_constant: Specific gas constant (J/kg/K)
         """
+        super().__init__("2D Euler Equations", num_variables=5, num_dimensions=2)
         self.gamma = gamma
         self.gas_constant = gas_constant
-        self.name = "2D Euler Equations"
-        self.num_variables = 5  # [ρ, ρu, ρv, ρw, E]
     
     def conservative_to_primitive(self, u: np.ndarray) -> EulerState:
         """
@@ -346,96 +386,57 @@ class EulerEquations2D:
         
         return dt_max
 
+    # Additional methods required by base class
+    
+    def compute_pressure(self, state: np.ndarray) -> float:
+        """Compute pressure from conservative variables"""
+        rho, rho_u, rho_v, rho_w, E = state
+        
+        # Kinetic energy
+        kinetic_energy = 0.5 * (rho_u**2 + rho_v**2 + rho_w**2) / rho
+        
+        # Internal energy and pressure
+        internal_energy = E - kinetic_energy
+        pressure = (self.gamma - 1.0) * internal_energy
+        
+        return max(pressure, 1e-10)  # Ensure positive pressure
+    
+    def compute_temperature(self, state: np.ndarray) -> float:
+        """Compute temperature from conservative variables"""
+        rho = state[0]
+        pressure = self.compute_pressure(state)
+        
+        # Ideal gas law: p = ρRT
+        temperature = pressure / (rho * self.gas_constant)
+        return max(temperature, 1e-10)  # Ensure positive temperature
+    
+    def get_variable_names(self) -> list:
+        """Get names of conservative variables"""
+        return ['density', 'momentum_x', 'momentum_y', 'momentum_z', 'energy']
+    
+    def get_primitive_names(self) -> list:
+        """Get names of primitive variables"""
+        return ['density', 'velocity_x', 'velocity_y', 'velocity_z', 'pressure']
+    
+    def validate_state(self, state: np.ndarray) -> bool:
+        """Validate physical consistency of state"""
+        if not super().validate_state(state):
+            return False
+        
+        rho, rho_u, rho_v, rho_w, E = state
+        
+        # Check positive density
+        if rho <= 0:
+            return False
+        
+        # Check positive pressure
+        kinetic_energy = 0.5 * (rho_u**2 + rho_v**2 + rho_w**2) / rho
+        internal_energy = E - kinetic_energy
+        pressure = (self.gamma - 1.0) * internal_energy
+        
+        if pressure <= 0:
+            return False
+        
+        return True
 
-class EulerInitialConditions:
-    """Common initial conditions for Euler equations"""
-    
-    @staticmethod
-    def uniform_flow(density: float, velocity_x: float, velocity_y: float, 
-                    pressure: float, velocity_z: float = 0.0, gamma: float = 1.4) -> Callable:
-        """
-        Uniform flow initial condition.
-        
-        Args:
-            density: Uniform density
-            velocity_x: Uniform x-velocity
-            velocity_y: Uniform y-velocity
-            pressure: Uniform pressure
-            velocity_z: Uniform z-velocity
-            gamma: Heat capacity ratio
-            
-        Returns:
-            Function that returns initial state at any (x, y)
-        """
-        def initial_condition(x: float, y: float, **kwargs) -> np.ndarray:
-            state = EulerState(density, velocity_x, velocity_y, velocity_z, pressure)
-            euler_eq = EulerEquations2D(gamma)
-            return euler_eq.primitive_to_conservative(state)
-        
-        return initial_condition
-    
-    @staticmethod
-    def riemann_problem_2d(left_state: EulerState, right_state: EulerState, 
-                          interface_x: float = 0.5, interface_y: float = 0.5,
-                          gamma: float = 1.4) -> Callable:
-        """
-        2D Riemann problem initial condition.
-        
-        Args:
-            left_state: Left state (primitive variables)
-            right_state: Right state (primitive variables)
-            interface_x: x-coordinate of interface
-            interface_y: y-coordinate of interface
-            gamma: Heat capacity ratio
-            
-        Returns:
-            Function that returns initial state at any (x, y)
-        """
-        def initial_condition(x: float, y: float, **kwargs) -> np.ndarray:
-            euler_eq = EulerEquations2D(gamma)
-            
-            # Simple 2D extension - use x-coordinate for interface
-            if x < interface_x:
-                return euler_eq.primitive_to_conservative(left_state)
-            else:
-                return euler_eq.primitive_to_conservative(right_state)
-        
-        return initial_condition
-    
-    @staticmethod
-    def gaussian_pulse(center_x: float, center_y: float, width: float,
-                      amplitude: float, background_density: float = 1.0,
-                      background_pressure: float = 1.0, gamma: float = 1.4) -> Callable:
-        """
-        Gaussian density pulse initial condition.
-        
-        Args:
-            center_x, center_y: Pulse center
-            width: Pulse width
-            amplitude: Pulse amplitude
-            background_density: Background density
-            background_pressure: Background pressure
-            gamma: Heat capacity ratio
-            
-        Returns:
-            Function that returns initial state at any (x, y)
-        """
-        def initial_condition(x: float, y: float, **kwargs) -> np.ndarray:
-            # Distance from center
-            r_squared = (x - center_x)**2 + (y - center_y)**2
-            
-            # Gaussian pulse
-            density = background_density + amplitude * np.exp(-r_squared / (2 * width**2))
-            
-            state = EulerState(
-                density=density,
-                velocity_x=0.0,
-                velocity_y=0.0,
-                velocity_z=0.0,
-                pressure=background_pressure
-            )
-            
-            euler_eq = EulerEquations2D(gamma)
-            return euler_eq.primitive_to_conservative(state)
-        
-        return initial_condition
+
