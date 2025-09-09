@@ -26,7 +26,7 @@ def gaussian_pulse_advection_2d(nx, ny):
     X, Y = np.meshgrid(x, y, indexing='ij')
     
     # Gaussian parameters
-    x_c, y_c = 0.25, 0.25  # Start near corner
+    x_c, y_c = 0.5, 0.5  # Start near corner
     sigma = 0.05
     amplitude = 1.0
     
@@ -51,7 +51,7 @@ def square_wave_advection_2d(nx, ny):
     y = np.linspace(0, 1, ny)
     X, Y = np.meshgrid(x, y, indexing='ij')
     
-    u = np.where((X >= 0.2) & (X <= 0.4) & (Y >= 0.2) & (Y <= 0.4), 1.0, 0.0)
+    u = np.where((X >= 0.4) & (X <= 0.6) & (Y >= 0.4) & (Y <= 0.6), 1.0, 0.0)
     
     return np.array([u])
 

@@ -78,6 +78,13 @@ class FVMSolver:
         self.time_step = 0
         self.is_initialized = False
         
+        # Time series data storage
+        self.time_series_data = {
+            'times': [],
+            'states': []
+        }
+        self.output_times = None
+        
     def _update_config(self, base_config: dict, update_config: dict):
         """Recursively update configuration"""
         for key, value in update_config.items():
@@ -261,6 +268,13 @@ class FVMSolver:
         if final_time is None:
             final_time = self.config['simulation']['final_time']
         
+        # Set up output times if specified in config
+        self.output_times = self.config['simulation'].get('outputtimes', None)
+        if self.output_times:
+            # Initialize time series with initial state
+            self.time_series_data['times'].append(self.current_time)
+            self.time_series_data['states'].append(self.data.get_interior_state().copy())
+        
         start_time = time.perf_counter()
         last_output_time = 0.0
         output_interval = self.config['simulation']['output_interval']
@@ -293,6 +307,10 @@ class FVMSolver:
             # Update time and step counter
             self.current_time += dt
             self.time_step += 1
+            
+            # Check if we need to record state at output times
+            if self.output_times:
+                self._check_and_record_output(self.current_time)
             
             step_end_time = time.perf_counter()
             step_time = step_end_time - step_start_time
@@ -332,6 +350,23 @@ class FVMSolver:
         
         # Print final statistics
         self._print_final_statistics()
+    
+    def _check_and_record_output(self, current_time: float):
+        """Check if current time matches any output times and record state"""
+        if not self.output_times:
+            return
+            
+        # Find any output times that we have passed or reached
+        tolerance = 1e-10  # Small tolerance for floating point comparison
+        
+        for target_time in self.output_times:
+            # Check if we haven't recorded this time yet and we've reached/passed it
+            if target_time not in [t for t in self.time_series_data['times']]:
+                if abs(current_time - target_time) <= tolerance or current_time >= target_time:
+                    # Record the current state
+                    self.time_series_data['times'].append(target_time)
+                    self.time_series_data['states'].append(self.data.get_interior_state().copy())
+                    break  # Only record one time point per step
     
     def _compute_time_step(self, physics_equation) -> float:
         """Compute stable time step using CFL condition"""
@@ -407,6 +442,10 @@ class FVMSolver:
             'pipeline_performance': self.pipeline.get_performance_summary(),
             'config': self.config
         }
+    
+    def get_time_series(self) -> Dict[str, Any]:
+        """Get time series data collected at output times"""
+        return self.time_series_data.copy()
 
 
 # Convenience functions for common setups
