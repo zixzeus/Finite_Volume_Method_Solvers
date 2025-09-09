@@ -19,8 +19,8 @@ from .boundary.boundary_conditions import (
     PeriodicBC, ReflectiveBC, TransmissiveBC, InflowBC
 )
 
-# Spatial discretization - Unified Framework
-from .spatial import SpatialDiscretizationFactory
+# Spatial discretization - Modular Framework
+from . import spatial
 from .spatial.riemann_solvers import (
     RiemannSolverFactory, HLLSolver, HLLCSolver, HLLDSolver
 )
@@ -31,7 +31,7 @@ from .temporal.time_integrators import (
 )
 
 # Complete solver interface
-from .core.solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
+# from .core.solver import FVMSolver, create_blast_wave_solver, create_shock_tube_solver
 
 __version__ = "1.0.0"
 __author__ = "FVM Framework Development Team"
@@ -53,7 +53,7 @@ __all__ = [
     'InflowBC',
     
     # Spatial methods
-    'SpatialDiscretizationFactory',
+    'spatial',
     'RiemannSolverFactory',
     'HLLSolver',
     'HLLCSolver',
@@ -66,10 +66,10 @@ __all__ = [
     'RungeKutta3', 
     'RungeKutta4',
     
-    # Complete solver
-    'FVMSolver',
-    'create_blast_wave_solver',
-    'create_shock_tube_solver'
+    # Complete solver (commented out for now)
+    # 'FVMSolver',
+    # 'create_blast_wave_solver',
+    # 'create_shock_tube_solver'
 ]
 
 
@@ -110,94 +110,7 @@ def print_info():
         print(f"  • {feature}")
 
 
-# Quick start examples and tutorials
-class QuickStart:
-    """Quick start examples for the FVM framework"""
-    
-    @staticmethod
-    def blast_wave_example():
-        """
-        Example: 2D blast wave simulation
-        
-        This creates a blast wave problem with high pressure in the center
-        and low pressure in the surrounding region.
-        """
-        print("FVM Framework - Blast Wave Example")
-        print("=" * 40)
-        
-        # Create solver
-        solver = create_blast_wave_solver(nx=100, ny=100)
-        
-        # Set initial conditions - blast wave
-        def blast_wave_ic(x, y):
-            r = np.sqrt(x**2 + y**2)
-            if r < 0.1:
-                # High pressure region
-                rho = 1.0
-                p = 10.0
-            else:
-                # Low pressure region  
-                rho = 0.125
-                p = 0.1
-            
-            # Conservative variables [rho, rho*u, rho*v, rho*w, E]
-            gamma = 1.4
-            u = v = w = 0.0  # Initially at rest
-            E = p / (gamma - 1.0) + 0.5 * rho * (u**2 + v**2 + w**2)
-            
-            return np.array([rho, rho*u, rho*v, rho*w, E])
-        
-        solver.set_initial_conditions(blast_wave_ic)
-        
-        print("Initial conditions set - circular blast wave")
-        print("Grid: 100 x 100")
-        print("Riemann solver: HLLC")
-        print("Time integrator: RK3")
-        print("Boundary conditions: Transmissive")
-        print("\nTo run simulation: solver.solve()")
-        
-        return solver
-    
-    @staticmethod
-    def shock_tube_example():
-        """
-        Example: 1D shock tube (Sod's problem) in 2D domain
-        
-        Classic Riemann problem with left and right states.
-        """
-        print("FVM Framework - Shock Tube Example")
-        print("=" * 40)
-        
-        # Create solver
-        solver = create_shock_tube_solver(nx=200, ny=4)
-        
-        # Set initial conditions - Sod shock tube
-        def shock_tube_ic(x, y):
-            if x < 0.5:
-                # Left state
-                rho, p = 1.0, 1.0
-            else:
-                # Right state
-                rho, p = 0.125, 0.1
-            
-            # Conservative variables
-            gamma = 1.4
-            u = v = w = 0.0  # Initially at rest
-            E = p / (gamma - 1.0) + 0.5 * rho * (u**2 + v**2 + w**2)
-            
-            return np.array([rho, rho*u, rho*v, rho*w, E])
-        
-        solver.set_initial_conditions(shock_tube_ic)
-        
-        print("Initial conditions set - Sod shock tube")
-        print("Grid: 200 x 4") 
-        print("Domain: [0, 1] x [0, 0.04]")
-        print("Riemann solver: HLLC")
-        print("Time integrator: RK3")
-        print("Boundary conditions: Transmissive")
-        print("\nTo run simulation: solver.solve()")
-        
-        return solver
+# Quick start examples and tutorials (commented out due to solver refactoring)
 
 
 # Import numpy if available for examples

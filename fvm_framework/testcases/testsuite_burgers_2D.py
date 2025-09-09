@@ -9,264 +9,230 @@ Burgers equation: ∂u/∂t + u∂u/∂x + v∂u/∂y = ν∇²u
 """
 
 import numpy as np
-from typing import Callable, Tuple
 
-def smooth_sine_wave_2d(N: int = None) -> Callable:
+def smooth_sine_wave_2d(nx, ny):
     """
     2D smooth sinusoidal initial condition.
     
     Tests accuracy of numerical scheme before shock formation.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        u = np.sin(2 * np.pi * x) * np.cos(2 * np.pi * y)
-        v = np.cos(2 * np.pi * x) * np.sin(2 * np.pi * y)
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    u = np.sin(2 * np.pi * X) * np.cos(2 * np.pi * Y)
+    v = np.cos(2 * np.pi * X) * np.sin(2 * np.pi * Y)
+    
+    return np.array([u, v])
 
-def gaussian_pulse_2d(N: int = None) -> Callable:
+def gaussian_vortex_2d(nx, ny):
     """
-    2D Gaussian pulse with circular symmetry.
+    2D Gaussian vortex for Burgers equation.
     
-    Tests radial wave propagation and steepening.
+    Tests vortex dynamics and viscous effects.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Gaussian parameters
-        x_c, y_c = 0.5, 0.5  # Center
-        sigma = 0.1  # Width
-        amplitude = 1.0
-        
-        r_sq = (x - x_c)**2 + (y - y_c)**2
-        u = amplitude * np.exp(-r_sq / (2 * sigma**2))
-        v = 0.0  # Initially only u-component
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    x_c, y_c = 0.5, 0.5  # Vortex center
+    sigma = 0.1
+    amplitude = 1.0
+    
+    r_sq = (X - x_c)**2 + (Y - y_c)**2
+    vortex_strength = amplitude * np.exp(-r_sq / (2 * sigma**2))
+    
+    # Velocity components for clockwise vortex
+    u = -(Y - y_c) * vortex_strength
+    v = (X - x_c) * vortex_strength
+    
+    return np.array([u, v])
 
-def shock_formation_2d(N: int = None) -> Callable:
+def shock_formation_2d(nx, ny):
     """
     2D shock formation test case.
     
-    Initial smooth profile that develops into shock.
+    Initial condition designed to form shocks quickly.
     
-    Returns:
-        Function that returns initial state at any (x, y)
-    """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        if x < 0.3:
-            u = 1.0
-            v = 0.5
-        elif x < 0.7:
-            u = 0.5
-            v = 0.0
-        else:
-            u = 0.0
-            v = -0.5
+    Args:
+        nx, ny: Grid dimensions
         
-        return np.array([u, v])
+    Returns:
+        State array with shape (2, nx, ny) for [u, v]
+    """
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    u = np.where(X < 0.5, 1.0, -0.5)
+    v = np.where(X < 0.5, 0.5, -1.0)
+    
+    return np.array([u, v])
 
-def rarefaction_wave_2d(N: int = None) -> Callable:
+def taylor_green_vortex_2d(nx, ny):
     """
-    2D rarefaction wave test case.
+    2D Taylor-Green vortex for Burgers equation.
     
-    Initial condition leading to expansion wave.
+    Classic vortex flow test case.
     
-    Returns:
-        Function that returns initial state at any (x, y)
-    """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        if x < 0.5:
-            u = -0.5
-            v = 0.0
-        else:
-            u = 0.5
-            v = 0.0
+    Args:
+        nx, ny: Grid dimensions
         
-        return np.array([u, v])
+    Returns:
+        State array with shape (2, nx, ny) for [u, v]
+    """
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    u = np.sin(2 * np.pi * X) * np.cos(2 * np.pi * Y)
+    v = -np.cos(2 * np.pi * X) * np.sin(2 * np.pi * Y)
+    
+    return np.array([u, v])
 
-def vortex_burgers_2d(N: int = None) -> Callable:
+def multi_vortex_2d(nx, ny):
     """
-    2D vortical flow for Burgers equation.
+    2D multiple vortex interaction.
     
-    Tests interaction between convection and diffusion.
+    Tests vortex merging and complex dynamics.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Vortex center
-        x_c, y_c = 0.5, 0.5
-        
-        # Velocity components creating vortex
-        u = -(y - y_c) * np.exp(-((x - x_c)**2 + (y - y_c)**2))
-        v = (x - x_c) * np.exp(-((x - x_c)**2 + (y - y_c)**2))
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    # Multiple vortex centers
+    vortices = [
+        (0.3, 0.3, 1.0),   # (x_c, y_c, strength)
+        (0.7, 0.3, -1.0),
+        (0.5, 0.7, 1.5)
+    ]
+    sigma = 0.1
+    
+    u_total = np.zeros_like(X)
+    v_total = np.zeros_like(Y)
+    
+    for x_c, y_c, strength in vortices:
+        r_sq = (X - x_c)**2 + (Y - y_c)**2
+        vortex_factor = strength * np.exp(-r_sq / (2 * sigma**2))
+        
+        # Add contribution from this vortex
+        u_total += -(Y - y_c) * vortex_factor
+        v_total += (X - x_c) * vortex_factor
+    
+    return np.array([u_total, v_total])
 
-def corner_flow_2d(N: int = None) -> Callable:
+def burgers_riemann_2d(nx, ny):
     """
-    2D corner flow configuration.
+    2D Riemann problem for Burgers equation.
     
-    Flow emanating from corner, testing boundary interactions.
+    Four quadrant configuration for testing discontinuous initial data.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Distance from corner
-        r = np.sqrt(x**2 + y**2)
-        
-        if r > 1e-10:
-            u = x / r * np.exp(-r)
-            v = y / r * np.exp(-r)
-        else:
-            u = 0.0
-            v = 0.0
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    # Four quadrants with different values
+    u = np.where((X <= 0.5) & (Y <= 0.5), 1.0,    # Bottom left
+         np.where((X > 0.5) & (Y <= 0.5), -0.5,   # Bottom right
+         np.where((X <= 0.5) & (Y > 0.5), 1.0,    # Top left
+                  -0.5)))                          # Top right
+    
+    v = np.where((X <= 0.5) & (Y <= 0.5), 1.0,    # Bottom left
+         np.where((X > 0.5) & (Y <= 0.5), 1.0,    # Bottom right
+         np.where((X <= 0.5) & (Y > 0.5), -0.5,   # Top left
+                  -0.5)))                          # Top right
+    
+    return np.array([u, v])
 
-def shear_layer_2d(N: int = None) -> Callable:
+def viscous_shock_2d(nx, ny):
     """
-    2D shear layer configuration.
+    2D viscous shock layer test.
     
-    Tests development of Kelvin-Helmholtz-like instabilities.
+    Smooth transition that steepens into shock-like structure.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Shear layer parameters
-        y_center = 0.5
-        thickness = 0.1
-        
-        # Hyperbolic tangent profile
-        u = np.tanh((y - y_center) / thickness)
-        
-        # Small perturbation
-        epsilon = 0.01
-        v = epsilon * np.sin(2 * np.pi * x)
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
+    u = np.tanh(10 * (X - 0.5))
+    v = np.tanh(10 * (Y - 0.5))
+    
+    return np.array([u, v])
 
-def converging_waves_2d(N: int = None) -> Callable:
+def diagonal_wave_2d(nx, ny):
     """
-    2D converging waves test case.
+    2D diagonal wave propagation.
     
-    Multiple waves converging to create complex interactions.
+    Tests wave propagation in diagonal direction.
     
+    Args:
+        nx, ny: Grid dimensions
+        
     Returns:
-        Function that returns initial state at any (x, y)
+        State array with shape (2, nx, ny) for [u, v]
     """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Four-corner configuration
-        if x < 0.5 and y < 0.5:  # Bottom-left
-            u, v = 1.0, 1.0
-        elif x > 0.5 and y < 0.5:  # Bottom-right
-            u, v = -1.0, 1.0
-        elif x < 0.5 and y > 0.5:  # Top-left
-            u, v = 1.0, -1.0
-        else:  # Top-right
-            u, v = -1.0, -1.0
-        
-        return np.array([u, v])
+    x = np.linspace(0, 1, nx)
+    y = np.linspace(0, 1, ny)
+    X, Y = np.meshgrid(x, y, indexing='ij')
     
-    return initial_condition
-
-def viscous_shock_2d(N: int = None) -> Callable:
-    """
-    2D viscous shock structure test case.
+    wave = np.sin(2 * np.pi * (X + Y))
+    u = wave
+    v = wave
     
-    Tests balance between convection and diffusion in shock.
-    
-    Returns:
-        Function that returns initial state at any (x, y)
-    """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Shock parameters
-        shock_pos = 0.5
-        shock_width = 0.05
-        
-        # Tanh shock profile
-        u = 0.5 * (1.0 + np.tanh((x - shock_pos) / shock_width))
-        v = 0.0
-        
-        return np.array([u, v])
-    
-    return initial_condition
-
-def multi_shock_interaction_2d(N: int = None) -> Callable:
-    """
-    2D multi-shock interaction test case.
-    
-    Multiple shocks interacting in complex ways.
-    
-    Returns:
-        Function that returns initial state at any (x, y)
-    """
-    def initial_condition(x: float, y: float) -> np.ndarray:
-        # Create step functions in both directions
-        if x < 0.3:
-            u_base = 1.0
-        elif x < 0.7:
-            u_base = 0.0
-        else:
-            u_base = -1.0
-        
-        if y < 0.3:
-            v_base = 1.0
-        elif y < 0.7:
-            v_base = 0.0
-        else:
-            v_base = -1.0
-        
-        u = u_base
-        v = v_base
-        
-        return np.array([u, v])
-    
-    return initial_condition
+    return np.array([u, v])
 
 # Test case registry
 BURGERS_TEST_CASES = {
     'smooth_sine_wave': smooth_sine_wave_2d,
-    'gaussian_pulse': gaussian_pulse_2d,
+    'gaussian_vortex': gaussian_vortex_2d,
     'shock_formation': shock_formation_2d,
-    'rarefaction_wave': rarefaction_wave_2d,
-    'vortex_burgers': vortex_burgers_2d,
-    'corner_flow': corner_flow_2d,
-    'shear_layer': shear_layer_2d,
-    'converging_waves': converging_waves_2d,
+    'taylor_green_vortex': taylor_green_vortex_2d,
+    'multi_vortex': multi_vortex_2d,
+    'burgers_riemann': burgers_riemann_2d,
     'viscous_shock': viscous_shock_2d,
-    'multi_shock_interaction': multi_shock_interaction_2d,
+    'diagonal_wave': diagonal_wave_2d,
 }
 
-def get_burgers_test_case(name: str) -> Callable:
+def get_burgers_test_case(name: str, nx: int, ny: int) -> np.ndarray:
     """
     Get a specific Burgers test case by name.
     
     Args:
         name: Test case name
+        nx, ny: Grid dimensions
         
     Returns:
-        Initial condition function
+        State array with shape (2, nx, ny) for [u, v]
         
     Raises:
         KeyError: If test case name not found
@@ -275,7 +241,7 @@ def get_burgers_test_case(name: str) -> Callable:
         available = ', '.join(BURGERS_TEST_CASES.keys())
         raise KeyError(f"Test case '{name}' not found. Available: {available}")
     
-    return BURGERS_TEST_CASES[name]()
+    return BURGERS_TEST_CASES[name](nx, ny)
 
 def list_burgers_test_cases() -> list:
     """List all available Burgers test cases."""

@@ -152,22 +152,28 @@ class RungeKutta3(TimeIntegrator):
                  residual_function: Callable, **kwargs) -> None:
         """RK3 integration step"""
         
-        # Store initial state
-        u0 = data.state.copy()
+        # Store initial interior state 
+        interior_slice = data.interior_slice
+        u0_interior = data.state[:, interior_slice[0], interior_slice[1]].copy()
         
         # Stage 1: U^{(1)} = U^n + dt * R(U^n)
         k1 = residual_function(data, **kwargs)
-        data.state[:] = u0 + dt * k1
-        data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
+        data.state[:, interior_slice[0], interior_slice[1]] = u0_interior + dt * k1
+        boundary_manager = kwargs.get('boundary_manager')
+        if boundary_manager:
+            data.apply_boundary_conditions(boundary_manager)
         
         # Stage 2: U^{(2)} = 3/4 * U^n + 1/4 * (U^{(1)} + dt * R(U^{(1)}))
         k2 = residual_function(data, **kwargs)
-        data.state[:] = 0.75 * u0 + 0.25 * (data.state + dt * k2)
-        data.apply_boundary_conditions(kwargs.get('boundary_type', 'periodic'))
+        u1_interior = data.state[:, interior_slice[0], interior_slice[1]]
+        data.state[:, interior_slice[0], interior_slice[1]] = 0.75 * u0_interior + 0.25 * (u1_interior + dt * k2)
+        if boundary_manager:
+            data.apply_boundary_conditions(boundary_manager)
         
         # Stage 3: U^{n+1} = 1/3 * U^n + 2/3 * (U^{(2)} + dt * R(U^{(2)}))
         k3 = residual_function(data, **kwargs)
-        data.state[:] = (1.0/3.0) * u0 + (2.0/3.0) * (data.state + dt * k3)
+        u2_interior = data.state[:, interior_slice[0], interior_slice[1]]
+        data.state[:, interior_slice[0], interior_slice[1]] = (1.0/3.0) * u0_interior + (2.0/3.0) * (u2_interior + dt * k3)
 
 
 class RungeKutta4(TimeIntegrator):

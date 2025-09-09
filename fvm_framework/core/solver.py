@@ -6,13 +6,12 @@ of the finite volume method framework into a unified solver.
 """
 
 import numpy as np
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 import time
 
 from .data_container import FVMDataContainer2D, GridGeometry
 from .pipeline import FVMPipeline, PipelineMonitor
 # Import BoundaryManager lazily to avoid circular imports
-from fvm_framework.spatial.factory import SpatialDiscretizationFactory
 from fvm_framework.temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
@@ -137,11 +136,16 @@ class FVMSolver:
         """Initialize spatial and temporal solvers"""
         numerical_config = self.config['numerical']
         
-        # Spatial discretization scheme (unified framework)
-        self.spatial_scheme = SpatialDiscretizationFactory.create(
-            numerical_config['spatial_scheme'],
-            **numerical_config.get('spatial_params', {})
-        )
+        # TODO: Spatial discretization scheme (unified framework) - factory missing
+        # self.spatial_scheme = SpatialDiscretizationFactory.create(
+        #     numerical_config['spatial_scheme'],
+        #     **numerical_config.get('spatial_params', {})
+        # )
+        # For now, create a placeholder
+        self.spatial_scheme = type('SpatialScheme', (), {
+            'name': numerical_config['spatial_scheme'],
+            'scheme_type': numerical_config['spatial_scheme']
+        })()
         
         # Time integrator
         self.time_integrator = TimeIntegratorFactory.create(numerical_config['time_integrator'])
@@ -178,29 +182,22 @@ class FVMSolver:
             'computation_times': []
         }
     
-    def set_initial_conditions(self, init_function: Callable[[np.ndarray, np.ndarray], np.ndarray]):
+    def set_initial_conditions(self, initial_state: np.ndarray):
         """
-        Set initial conditions using a function.
+        Set initial conditions using state array.
         
         Args:
-            init_function: Function that takes (x, y) coordinates and returns
-                          state vector [rho, rho*u, rho*v, rho*w, E]
+            initial_state: State array with shape (num_vars, nx, ny) containing
+                          initial conditions for all grid points
         """
-        # Create coordinate arrays
-        x = np.linspace(self.geometry.x_min + 0.5 * self.geometry.dx,
-                       self.geometry.x_max - 0.5 * self.geometry.dx,
-                       self.geometry.nx)
-        y = np.linspace(self.geometry.y_min + 0.5 * self.geometry.dy,
-                       self.geometry.y_max - 0.5 * self.geometry.dy,
-                       self.geometry.ny)
+        # Validate input array dimensions
+        expected_shape = (self.data.num_vars, self.geometry.nx, self.geometry.ny)
+        if initial_state.shape != expected_shape:
+            raise ValueError(f"Initial state array shape {initial_state.shape} does not match "
+                           f"expected shape {expected_shape}")
         
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        
-        # Apply initial conditions
-        for i in range(self.geometry.nx):
-            for j in range(self.geometry.ny):
-                state_ij = init_function(X[i, j], Y[i, j])
-                self.data.state[:, i, j] = state_ij
+        # Set initial conditions directly
+        self.data.state[:, :, :] = initial_state
         
         self.is_initialized = True
         

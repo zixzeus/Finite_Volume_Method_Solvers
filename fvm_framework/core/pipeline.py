@@ -67,8 +67,15 @@ class BoundaryStage(ComputationStage):
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
         """Apply boundary conditions to the data"""
         def _apply_boundaries():
-            bc_type = kwargs.get('boundary_type', self.boundary_type)
-            data.apply_boundary_conditions(bc_type)
+            # Use boundary_manager if provided, otherwise create from type
+            boundary_manager = kwargs.get('boundary_manager')
+            if boundary_manager is None:
+                # Fallback to creating from type string
+                bc_type = kwargs.get('boundary_type', self.boundary_type)
+                # For now, just use the type string - this will need proper boundary manager factory
+                data.apply_boundary_conditions(bc_type)
+            else:
+                data.apply_boundary_conditions(boundary_manager)
             
         self._time_execution(_apply_boundaries)
 
@@ -144,12 +151,14 @@ class FluxStage(ComputationStage):
             y_left, y_right = data.interface_states_y
             
             # Compute fluxes directly using flux calculator
-            # Store in interior portion of flux arrays using indexing helpers
+            # Remove physics_equation from kwargs to avoid duplicate arguments
+            flux_kwargs = {k: v for k, v in kwargs.items() if k != 'physics_equation'}
+            
             interior_flux_x = self._flux_calculator.compute_all_x_fluxes(
-                x_left, x_right, physics_equation, **kwargs
+                x_left, x_right, physics_equation, **flux_kwargs
             )
             interior_flux_y = self._flux_calculator.compute_all_y_fluxes(
-                y_left, y_right, physics_equation, **kwargs
+                y_left, y_right, physics_equation, **flux_kwargs
             )
             
             # Store in data container flux arrays (map to ghost cell flux arrays)
@@ -209,8 +218,10 @@ class TemporalStage(ComputationStage):
                 # by previous stages (ReconstructionStage -> FluxStage)
                 return data_container.compute_residual()
             
-            # Apply time integrator
-            self._integrator.integrate(data, dt, residual_function, **kwargs)
+            # Apply time integrator  
+            # Remove dt from kwargs to avoid duplicate arguments
+            integrator_kwargs = {k: v for k, v in kwargs.items() if k != 'dt'}
+            self._integrator.integrate(data, dt, residual_function, **integrator_kwargs)
             
         self._time_execution(_time_integrate)
 
