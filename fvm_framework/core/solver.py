@@ -11,8 +11,6 @@ import time
 
 from .data_container import FVMDataContainer2D, GridGeometry
 from .pipeline import FVMPipeline, PipelineMonitor
-# Import BoundaryManager lazily to avoid circular imports
-from fvm_framework.temporal.time_integrators import TimeIntegratorFactory, ResidualFunction, TemporalSolver
 
 
 class FVMSolver:
@@ -50,11 +48,12 @@ class FVMSolver:
                 }
             },
             'numerical': {
-                'spatial_scheme': 'lax_friedrichs',
-                'time_integrator': 'rk3',
+                'reconstruction_type': 'constant',  # Spatial reconstruction method
+                'flux_type': 'lax_friedrichs',      # Flux calculator type
+                'time_scheme': 'rk3',               # Time integration scheme
                 'cfl_number': 0.5,
                 'boundary_type': 'periodic',
-                'spatial_params': {}
+                'flux_params': {}                   # Additional flux calculator parameters
             },
             'simulation': {
                 'final_time': 1.0,
@@ -136,38 +135,18 @@ class FVMSolver:
         """Initialize spatial and temporal solvers"""
         numerical_config = self.config['numerical']
         
-        # TODO: Spatial discretization scheme (unified framework) - factory missing
-        # self.spatial_scheme = SpatialDiscretizationFactory.create(
-        #     numerical_config['spatial_scheme'],
-        #     **numerical_config.get('spatial_params', {})
-        # )
-        # For now, create a placeholder
-        self.spatial_scheme = type('SpatialScheme', (), {
-            'name': numerical_config['spatial_scheme'],
-            'scheme_type': numerical_config['spatial_scheme']
-        })()
-        
-        # Time integrator
-        self.time_integrator = TimeIntegratorFactory.create(numerical_config['time_integrator'])
-        
-        # Residual function (already works with any spatial scheme)
-        self.residual_function = ResidualFunction(self.spatial_scheme)
-        
-        # Temporal solver
-        self.temporal_solver = TemporalSolver(
-            self.time_integrator,
-            self.residual_function,
-            cfl_number=numerical_config['cfl_number'],
-            adaptive_dt=True
-        )
-        
-        # Pipeline for monitoring
+        # Initialize FVM Pipeline with modular architecture
         self.pipeline = FVMPipeline(
             boundary_type=numerical_config['boundary_type'],
-            spatial_scheme=numerical_config['spatial_scheme'],  # Pass scheme name as string
-            time_scheme=numerical_config['time_integrator'],
-            **numerical_config.get('spatial_params', {})
+            reconstruction_type=numerical_config.get('reconstruction_type', 'constant'),
+            flux_type=numerical_config.get('flux_type', 'lax_friedrichs'),
+            time_scheme=numerical_config.get('time_scheme', 'rk3'),
+            source_type=numerical_config.get('source_type', None),
+            **numerical_config.get('flux_params', {})
         )
+        
+        # Store CFL number for time step calculation
+        self.cfl_number = numerical_config['cfl_number']
     
     def _initialize_monitoring(self):
         """Initialize monitoring and diagnostics"""
@@ -196,8 +175,9 @@ class FVMSolver:
             raise ValueError(f"Initial state array shape {initial_state.shape} does not match "
                            f"expected shape {expected_shape}")
         
-        # Set initial conditions directly
-        self.data.state[:, :, :] = initial_state
+        # Set initial conditions directly in the interior cells
+        ng = self.data.ng  # Number of ghost cells
+        self.data.state[:, ng:ng+self.geometry.nx, ng:ng+self.geometry.ny] = initial_state
         
         self.is_initialized = True
         
@@ -265,7 +245,7 @@ class FVMSolver:
     
     def solve(self, final_time: Optional[float] = None, max_steps: Optional[int] = None):
         """
-        Run the simulation.
+        Run the simulation using the modular pipeline framework.
         
         Args:
             final_time: Final simulation time (overrides config)
@@ -287,59 +267,38 @@ class FVMSolver:
         
         print(f"Starting simulation to time {final_time}")
         print(f"Grid: {self.geometry.nx} × {self.geometry.ny}")
-        print(f"Spatial scheme: {self.spatial_scheme.name}")
-        print(f"Time integrator: {self.time_integrator.name}")
+        print(f"Pipeline stages: {len(self.pipeline.stages)}")
         print("-" * 50)
         
-        # Main time loop
-        while self.current_time is not None and final_time is not None and self.current_time < final_time:
+        # Main time loop using pipeline
+        while self.current_time < final_time:
             if max_steps and self.time_step >= max_steps:
                 break
                 
             step_start_time = time.perf_counter()
             
-            # Solve one time step
-            old_time = self.temporal_solver.current_time
-            old_step = self.temporal_solver.time_step
+            # Compute time step
+            dt = self._compute_time_step(physics_equation)
+            dt = min(dt, final_time - self.current_time)
             
-            # Update temporal solver state to match our state
-            self.temporal_solver.current_time = self.current_time
-            self.temporal_solver.time_step = self.time_step
+            # Execute pipeline time step
+            pipeline_kwargs = {
+                'physics_equation': physics_equation,
+                'boundary_manager': self.boundary_manager,
+                **self.config['physics']['params']
+            }
             
-            # Take one time step
-            remaining_time = final_time - self.current_time
-            if remaining_time < self.temporal_solver.current_dt:
-                # Last step - adjust time step
-                old_dt = self.temporal_solver.current_dt
-                self.temporal_solver.current_dt = remaining_time
-                
-                self.temporal_solver.solve_n_steps(
-                    self.data, 1,
-                    boundary_manager=self.boundary_manager,
-                    **self.config['physics']['params']
-                )
-                
-                self.temporal_solver.current_dt = old_dt
-            else:
-                self.temporal_solver.solve_n_steps(
-                    self.data, 1,
-                    boundary_manager=self.boundary_manager,
-                    **self.config['physics']['params']
-                )
+            self.pipeline.execute_time_step(self.data, dt, **pipeline_kwargs)
             
-            # Update our time and step
-            self.current_time = self.temporal_solver.current_time
-            self.time_step = self.temporal_solver.time_step
+            # Update time and step counter
+            self.current_time += dt
+            self.time_step += 1
             
             step_end_time = time.perf_counter()
             step_time = step_end_time - step_start_time
             
-            # Apply boundary conditions
-            self.boundary_manager.apply_all(self.data)
-            
             # Update monitoring
-            self.monitor.update(self.data, self.temporal_solver.current_dt,
-                              self.config['physics']['gamma'])
+            self.monitor.update(self.data, dt, physics_equation)
             
             # Store statistics
             self.statistics['time_steps'].append(self.current_time)
@@ -349,7 +308,6 @@ class FVMSolver:
                 conservation_error = self.data.get_conservation_error()
                 self.statistics['conservation_errors'].append(conservation_error)
                 
-                # Compute wave speed if physics equation provided
                 if physics_equation is not None:
                     max_wave_speed = physics_equation.compute_max_wave_speed(self.data)
                     self.statistics['max_wave_speeds'].append(max_wave_speed)
@@ -358,7 +316,7 @@ class FVMSolver:
             if self.current_time - last_output_time >= output_interval or \
                self.current_time >= final_time:
                 
-                self._print_progress(step_time)
+                self._print_progress(step_time, dt, physics_equation)
                 last_output_time = self.current_time
         
         end_time = time.perf_counter()
@@ -369,15 +327,27 @@ class FVMSolver:
         print(f"Total time steps: {self.time_step}")
         print(f"Average time per step: {total_time/max(self.time_step, 1):.6f} seconds")
         
+        # Print pipeline performance report
+        self.pipeline.print_performance_report()
+        
         # Print final statistics
         self._print_final_statistics()
     
-    def _print_progress(self, step_time: float):
+    def _compute_time_step(self, physics_equation) -> float:
+        """Compute stable time step using CFL condition"""
+        max_wave_speed = physics_equation.compute_max_wave_speed(self.data)
+        
+        if max_wave_speed > 1e-15:
+            min_dx = min(self.geometry.dx, self.geometry.dy)
+            dt = self.cfl_number * min_dx / max_wave_speed
+        else:
+            dt = 1e-6  # Fallback for very small wave speeds
+            
+        return dt
+    
+    def _print_progress(self, step_time: float, dt: float, physics_equation):
         """Print simulation progress"""
-        # Use current physics equation to compute wave speed
-        physics = self._create_physics_equation()
-        max_speed = physics.compute_max_wave_speed(self.data)
-        dt = self.temporal_solver.current_dt
+        max_speed = physics_equation.compute_max_wave_speed(self.data)
         
         print(f"Step: {self.time_step:8d}, Time: {self.current_time:.6f}, "
               f"dt: {dt:.2e}, Max Speed: {max_speed:.2e}, "
@@ -403,14 +373,6 @@ class FVMSolver:
         Returns:
             Dictionary containing solution arrays
         """
-        # Use current physics equation to compute primitives
-        physics = self._create_physics_equation()
-        
-        # Return basic solution data (physics-agnostic)
-        solution_data = {
-            'conservative': self.data.state.copy(),
-        }
-        
         # Create coordinate arrays
         x = np.linspace(self.geometry.x_min + 0.5 * self.geometry.dx,
                        self.geometry.x_max - 0.5 * self.geometry.dx,
@@ -421,10 +383,14 @@ class FVMSolver:
         
         X, Y = np.meshgrid(x, y, indexing='ij')
         
+        # Extract interior solution (excluding ghost cells)
+        ng = self.data.ng
+        interior_state = self.data.state[:, ng:ng+self.geometry.nx, ng:ng+self.geometry.ny].copy()
+        
         return {
             'x': X,
             'y': Y,
-            'conservative': self.data.state.copy(),
+            'conservative': interior_state,
             'current_time': self.current_time,
             'time_step': self.time_step
         }
@@ -438,7 +404,7 @@ class FVMSolver:
                 'wave_speed_history': self.monitor.max_wave_speed_history,
                 'conservation_drift': self.monitor.get_conservation_drift()
             },
-            'solver_status': self.temporal_solver.get_status(),
+            'pipeline_performance': self.pipeline.get_performance_summary(),
             'config': self.config
         }
 
@@ -455,10 +421,12 @@ def create_blast_wave_solver(nx: int = 200, ny: int = 200,
             'x_min': -domain_size/2, 'y_min': -domain_size/2
         },
         'numerical': {
-            'spatial_scheme': 'hllc',  # Use HLLC as spatial scheme
-            'time_integrator': 'rk3',
+            'reconstruction_type': 'slope_limiter',
+            'flux_type': 'hllc',
+            'time_scheme': 'rk3',
             'cfl_number': 0.4,
-            'boundary_type': 'transmissive'
+            'boundary_type': 'transmissive',
+            'flux_params': {'riemann_solver': 'hllc'}
         },
         'simulation': {
             'final_time': 0.2,
@@ -480,10 +448,12 @@ def create_shock_tube_solver(nx: int = 400, ny: int = 4,
             'x_min': 0.0, 'y_min': 0.0
         },
         'numerical': {
-            'spatial_scheme': 'hllc',  # Use HLLC as spatial scheme
-            'time_integrator': 'rk3', 
+            'reconstruction_type': 'slope_limiter',
+            'flux_type': 'hllc',
+            'time_scheme': 'rk3',
             'cfl_number': 0.9,
-            'boundary_type': 'transmissive'
+            'boundary_type': 'transmissive',
+            'flux_params': {'riemann_solver': 'hllc'}
         },
         'simulation': {
             'final_time': 0.2,
