@@ -404,11 +404,12 @@ class AdvectionComparison:
                     plt.colorbar(im, ax=contour_ax)
                     
                     # Bottom row: Cross-section plot
-                    cross_ax.plot(x, state[:, y_mid_idx], 'b-', linewidth=2)
+                    cross_ax.plot(x, cross_section_data[i], 'b-', linewidth=2)
                     cross_ax.set_title(f'Cross-section at y = {self.params.domain_size/2:.1f}')
                     cross_ax.set_xlabel('x')
                     cross_ax.set_ylabel('u')
                     cross_ax.set_xlim(0, self.params.domain_size)
+                    cross_ax.set_ylim(y_min, y_max)  # Use consistent y-axis scaling
                     cross_ax.grid(True, alpha=0.3)
                     
                 else:
