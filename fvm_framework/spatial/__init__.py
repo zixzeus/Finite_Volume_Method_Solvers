@@ -1,24 +1,17 @@
 """
 Spatial Discretization Module
 
-This module provides a unified framework for all spatial discretization methods
-including finite volume, Riemann solver-based, and discontinuous Galerkin methods.
+This module provides a modular framework for spatial discretization methods
+using separate reconstruction and flux calculation components.
 """
 
 from .factory import SpatialDiscretizationFactory, create_spatial_scheme
-from .base import (
-    SpatialDiscretization,
-    FiniteVolumeScheme,
-    RiemannBasedScheme,
-    HighOrderScheme,
-    DiscontinuousGalerkinScheme
-)
+from .base import SpatialDiscretization
+from .modular_spatial_scheme import ModularSpatialScheme
 
-# Import specific schemes
-from .lax_friedrichs import LaxFriedrichsScheme
-from .tvd_lax_friedrichs import TVDLFScheme
-from .riemann_schemes import HLLRiemannScheme, HLLCRiemannScheme, HLLDRiemannScheme
-from .dg_scheme import DGScheme
+# Import modular components
+from . import reconstruction
+from . import flux_calculation
 
 __all__ = [
     # Factory
@@ -27,20 +20,11 @@ __all__ = [
     
     # Base classes
     'SpatialDiscretization',
-    'FiniteVolumeScheme', 
-    'RiemannBasedScheme',
-    'HighOrderScheme',
-    'DiscontinuousGalerkinScheme',
     
-    # Finite volume schemes
-    'LaxFriedrichsScheme',
-    'TVDLFScheme',
+    # Modular scheme
+    'ModularSpatialScheme',
     
-    # Riemann solver schemes
-    'HLLRiemannScheme',
-    'HLLCRiemannScheme', 
-    'HLLDRiemannScheme',
-    
-    # High-order schemes
-    'DGScheme',
+    # Component modules
+    'reconstruction',
+    'flux_calculation',
 ]

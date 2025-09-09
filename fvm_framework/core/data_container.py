@@ -71,15 +71,32 @@ class FVMDataContainer2D:
         self.state = np.zeros((self.num_vars, self.nx_total, self.ny_total), dtype=np.float64, order='C')
         self.state_new = np.zeros((self.num_vars, self.nx_total, self.ny_total), dtype=np.float64, order='C')
         
-        # Flux arrays for x and y directions (interior + 1 for face fluxes)
-        self.flux_x = np.zeros((self.num_vars, self.nx + 1, self.ny), dtype=np.float64, order='C')
-        self.flux_y = np.zeros((self.num_vars, self.nx, self.ny + 1), dtype=np.float64, order='C')
+        # Flux arrays for x and y directions (including ghost cell interfaces)
+        # x-direction: need nx_total+1 interfaces for nx_total cells (including ghosts)
+        # y-direction: need ny_total+1 interfaces for ny_total cells (including ghosts)
+        self.flux_x = np.zeros((self.num_vars, self.nx_total + 1, self.ny_total), dtype=np.float64, order='C')
+        self.flux_y = np.zeros((self.num_vars, self.nx_total, self.ny_total + 1), dtype=np.float64, order='C')
         
-        # Source terms (interior only)
+        # Source terms (interior only - ghost cells don't need source terms)
+        # Shape: (num_vars, nx, ny) - matches interior domain size only
         self.source = np.zeros((self.num_vars, self.nx, self.ny), dtype=np.float64, order='C')
         
         # Temporary arrays for intermediate calculations (including ghost cells)
         self.temp_state = np.zeros((self.num_vars, self.nx_total, self.ny_total), dtype=np.float64, order='C')
+        
+        # Interface state arrays for reconstruction (interior interfaces only)
+        # These store reconstructed states at interior interfaces for flux calculation
+        # X 方向界面状态 (interior interfaces: nx+1 interfaces for nx interior cells)
+        self.interface_states_x = (
+            np.zeros((self.num_vars, self.nx + 1, self.ny)),  # left states at x-interfaces
+            np.zeros((self.num_vars, self.nx + 1, self.ny))   # right states at x-interfaces
+        )
+
+        # Y 方向界面状态 (interior interfaces: ny+1 interfaces for ny interior cells)
+        self.interface_states_y = (
+            np.zeros((self.num_vars, self.nx, self.ny + 1)),  # left states at y-interfaces  
+            np.zeros((self.num_vars, self.nx, self.ny + 1))   # right states at y-interfaces
+        )
         
         # Primitive variables removed - use physics equation classes instead
         
@@ -173,6 +190,52 @@ class FVMDataContainer2D:
         """Get interior total energy field"""
         return self.get_interior_state()[4]
     
+    def get_interior_flux_x(self) -> np.ndarray:
+        """
+        Get interior x-direction flux interfaces (excluding ghost interfaces).
+        
+        Returns:
+            Interior x-flux with shape (num_vars, nx+1, ny)
+        """
+        ng = self.ng
+        return self.flux_x[:, ng:ng+self.nx+1, ng:ng+self.ny]
+    
+    def get_interior_flux_y(self) -> np.ndarray:
+        """
+        Get interior y-direction flux interfaces (excluding ghost interfaces).
+        
+        Returns:
+            Interior y-flux with shape (num_vars, nx, ny+1)
+        """
+        ng = self.ng
+        return self.flux_y[:, ng:ng+self.nx, ng:ng+self.ny+1]
+    
+    def flux_x_index(self, i: int, j: int) -> tuple:
+        """
+        Convert interior domain indices to full flux_x array indices.
+        
+        Args:
+            i: x-interface index in interior domain (0 to nx)
+            j: y-cell index in interior domain (0 to ny-1)
+            
+        Returns:
+            (flux_i, flux_j) indices for flux_x array
+        """
+        return (i + self.ng, j + self.ng)
+    
+    def flux_y_index(self, i: int, j: int) -> tuple:
+        """
+        Convert interior domain indices to full flux_y array indices.
+        
+        Args:
+            i: x-cell index in interior domain (0 to nx-1)
+            j: y-interface index in interior domain (0 to ny)
+            
+        Returns:
+            (flux_i, flux_j) indices for flux_y array
+        """
+        return (i + self.ng, j + self.ng)
+    
     # Physics-related methods moved to physics equation classes
     # Use physics_equation.conservative_to_primitive(data.state) instead
     
@@ -194,13 +257,19 @@ class FVMDataContainer2D:
         """
         residual = np.zeros((self.num_vars, self.nx, self.ny), dtype=np.float64)
         
-        # Flux differences in x-direction
-        residual -= (self.flux_x[:, 1:, :] - self.flux_x[:, :-1, :]) / self.geometry.dx
+        # Get interior flux slices
+        interior_flux_x = self.get_interior_flux_x()  # Shape: (num_vars, nx+1, ny)
+        interior_flux_y = self.get_interior_flux_y()  # Shape: (num_vars, nx, ny+1)
         
-        # Flux differences in y-direction
-        residual -= (self.flux_y[:, :, 1:] - self.flux_y[:, :, :-1]) / self.geometry.dy
+        # Flux differences in x-direction for interior cells
+        # For cell i: flux_x[i+1] - flux_x[i]
+        residual -= (interior_flux_x[:, 1:, :] - interior_flux_x[:, :-1, :]) / self.geometry.dx
         
-        # Add source terms
+        # Flux differences in y-direction for interior cells  
+        # For cell j: flux_y[j+1] - flux_y[j]
+        residual -= (interior_flux_y[:, :, 1:] - interior_flux_y[:, :, :-1]) / self.geometry.dy
+        
+        # Add source terms (already interior-only)
         residual += self.source
         
         return residual

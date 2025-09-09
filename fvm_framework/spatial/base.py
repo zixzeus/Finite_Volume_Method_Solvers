@@ -1,13 +1,11 @@
 """
-Base Classes for Spatial Discretization Methods
+Base Classes for Spatial Discretization
 
-This module defines the abstract base classes that all spatial discretization 
-methods must inherit from, providing a unified interface.
+This module defines the abstract base class for all spatial discretization methods.
 """
 
-import numpy as np
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+import numpy as np
 from fvm_framework.core.data_container import FVMDataContainer2D
 
 
@@ -15,21 +13,27 @@ class SpatialDiscretization(ABC):
     """
     Abstract base class for all spatial discretization methods.
     
-    This provides a unified interface for:
-    - Finite volume schemes (Lax-Friedrichs, TVDLF, etc.)
-    - Riemann solver-based methods (HLL, HLLC, HLLD)
-    - High-order methods (DG, WENO, etc.)
+    This class defines the interface that all spatial schemes must implement,
+    whether they are finite volume, discontinuous Galerkin, or other methods.
     """
     
-    def __init__(self, name: str, order: int = 1, scheme_type: str = "generic"):
+    def __init__(self, name: str, order: int = 1, scheme_type: str = "unknown"):
+        """
+        Initialize spatial discretization method.
+        
+        Args:
+            name: Name of the discretization method
+            order: Spatial accuracy order
+            scheme_type: Type of scheme (e.g., "finite_volume", "discontinuous_galerkin")
+        """
         self.name = name
-        self.order = order  # Spatial accuracy order
-        self.scheme_type = scheme_type  # 'finite_volume', 'riemann_based', 'discontinuous_galerkin', etc.
+        self.order = order
+        self.scheme_type = scheme_type
     
     @abstractmethod
     def compute_fluxes(self, data: FVMDataContainer2D, physics_equation, **kwargs) -> None:
         """
-        Compute numerical fluxes at cell interfaces.
+        Compute numerical fluxes for the spatial discretization.
         
         Args:
             data: FVM data container with state and geometry
@@ -41,81 +45,52 @@ class SpatialDiscretization(ABC):
     def get_max_wave_speed(self, data: FVMDataContainer2D, physics_equation, **kwargs) -> float:
         """
         Get maximum wave speed for CFL condition.
-        Default implementation - can be overridden by subclasses.
+        
+        Args:
+            data: FVM data container
+            physics_equation: Physics equation object
+            **kwargs: Additional parameters
+            
+        Returns:
+            Maximum wave speed
         """
-        if hasattr(physics_equation, 'compute_max_wave_speed'):
-            return physics_equation.compute_max_wave_speed(data)
-        else:
-            # Fallback for simple cases
-            return 1.0
-    
-    def needs_reconstruction(self) -> bool:
-        """Return True if scheme needs state reconstruction"""
-        return self.order > 1
+        return physics_equation.compute_max_wave_speed(data)
     
     def supports_physics(self, physics_type: str) -> bool:
-        """Check if this scheme supports the given physics type"""
-        # Default: support all physics types
-        return True
-    
-    def compute_flux_divergence(self, data: FVMDataContainer2D) -> np.ndarray:
         """
-        Compute flux divergence for time integration.
-        Default implementation for finite volume methods.
+        Check if this scheme supports a given physics type.
         
-        Returns residual = -∇·F for explicit time stepping.
+        Args:
+            physics_type: Physics equation type (e.g., "euler", "mhd")
+            
+        Returns:
+            True if physics type is supported
         """
-        residual = np.zeros_like(data.state)
-        
-        # Interior points only
-        for i in range(1, data.nx - 1):
-            for j in range(1, data.ny - 1):
-                # Flux divergence: ∇·F = (F_{i+1/2} - F_{i-1/2})/dx + (G_{j+1/2} - G_{j-1/2})/dy
-                flux_div_x = (data.flux_x[:, i+1, j] - data.flux_x[:, i, j]) / data.geometry.dx
-                flux_div_y = (data.flux_y[:, i, j+1] - data.flux_y[:, i, j]) / data.geometry.dy
-                residual[:, i, j] = -(flux_div_x + flux_div_y)
-        
-        return residual
-
-
-class FiniteVolumeScheme(SpatialDiscretization):
-    """Base class for finite volume schemes"""
+        return True  # Default: support all physics types
     
-    def __init__(self, name: str, order: int = 1):
-        super().__init__(name, order, "finite_volume")
-
-
-class RiemannBasedScheme(SpatialDiscretization):
-    """Base class for Riemann solver-based schemes"""
-    
-    def __init__(self, name: str, riemann_solver_type: str, order: int = 1):
-        super().__init__(name, order, "riemann_based")
-        self.riemann_solver_type = riemann_solver_type
-        self.riemann_solver = None
+    def get_stencil_size(self) -> int:
+        """
+        Get stencil size required by this scheme.
         
-    def _get_riemann_solver(self):
-        """Lazy initialization of Riemann solver"""
-        if self.riemann_solver is None:
-            from .riemann_solvers import RiemannSolverFactory
-            self.riemann_solver = RiemannSolverFactory.create(self.riemann_solver_type)
-        return self.riemann_solver
-
-
-class HighOrderScheme(SpatialDiscretization):
-    """Base class for high-order schemes like DG, WENO, etc."""
+        Returns:
+            Number of cells required on each side
+        """
+        return max(1, (self.order + 1) // 2)
     
-    def __init__(self, name: str, order: int = 2):
-        super().__init__(name, order, "high_order")
+    def needs_boundary_treatment(self) -> bool:
+        """
+        Check if this scheme needs special boundary treatment.
         
-    def needs_reconstruction(self) -> bool:
-        """High-order schemes always need reconstruction"""
-        return True
-
-
-class DiscontinuousGalerkinScheme(HighOrderScheme):
-    """Base class for Discontinuous Galerkin schemes"""
+        Returns:
+            True if special boundary handling is required
+        """
+        return self.order > 1
     
-    def __init__(self, name: str, polynomial_order: int = 1):
-        super().__init__(name, polynomial_order + 1)  # Formal order of accuracy
-        self.scheme_type = "discontinuous_galerkin"
-        self.polynomial_order = polynomial_order
+    def __str__(self) -> str:
+        """String representation"""
+        return f"{self.__class__.__name__}(name='{self.name}', order={self.order})"
+    
+    def __repr__(self) -> str:
+        """Detailed representation"""
+        return (f"{self.__class__.__name__}(name='{self.name}', "
+               f"order={self.order}, scheme_type='{self.scheme_type}')")

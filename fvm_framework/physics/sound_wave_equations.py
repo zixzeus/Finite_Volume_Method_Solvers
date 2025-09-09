@@ -148,6 +148,16 @@ class SoundWaveEquations2D(ConservationLaw):
         
         return flux_y
     
+    def max_wave_speed(self, state: np.ndarray, direction: int) -> float:
+        """Compute maximum wave speed (required by base class)"""
+        # For linear sound waves, max speed is just the sound speed
+        # plus any convective velocity
+        p, u, v = state
+        if direction == 0:
+            return self.sound_speed + abs(u)
+        else:
+            return self.sound_speed + abs(v)
+    
     def compute_eigenvalues(self, u: np.ndarray, direction: int) -> np.ndarray:
         """
         Compute eigenvalues of flux Jacobian matrix.

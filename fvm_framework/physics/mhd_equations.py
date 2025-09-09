@@ -188,6 +188,35 @@ class MHDEquations2D(ConservationLaw):
         
         return np.array([rho, rho_u, rho_v, rho_w, E, Bx, By, Bz])
     
+    def compute_fluxes(self, state: np.ndarray, direction: int) -> np.ndarray:
+        """Compute fluxes for given direction (required by base class)"""
+        if direction == 0:
+            return self.compute_flux_x(state)
+        else:
+            return self.compute_flux_y(state)
+    
+    def max_wave_speed(self, state: np.ndarray, direction: int) -> float:
+        """Compute maximum wave speed (required by base class)"""
+        rho, rho_u, rho_v, rho_w, E, Bx, By, Bz = state
+        
+        u, v = rho_u/rho, rho_v/rho
+        p = self.compute_pressure(state)
+        
+        # Sound speed and Alfven speeds
+        cs = np.sqrt(self.gamma * p / rho)
+        ca_x = abs(Bx) / np.sqrt(rho)
+        ca_y = abs(By) / np.sqrt(rho)
+        
+        # Fast magnetosonic speed
+        if direction == 0:
+            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + 
+                               np.sqrt((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_x**2)))
+            return abs(u) + cf
+        else:
+            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + 
+                               np.sqrt((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_y**2)))
+            return abs(v) + cf
+    
     def compute_flux_x(self, u: np.ndarray) -> np.ndarray:
         """
         Compute flux vector in x-direction for MHD equations.

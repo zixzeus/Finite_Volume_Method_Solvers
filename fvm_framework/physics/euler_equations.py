@@ -157,6 +157,23 @@ class EulerEquations2D(ConservationLaw):
         
         return np.array([rho, rho_u, rho_v, rho_w, E])
     
+    def compute_fluxes(self, state: np.ndarray, direction: int) -> np.ndarray:
+        """Compute fluxes for given direction (required by base class)"""
+        if direction == 0:
+            return self.compute_flux_x(state)
+        else:
+            return self.compute_flux_y(state)
+    
+    def max_wave_speed(self, state: np.ndarray, direction: int) -> float:
+        """Compute maximum wave speed (required by base class)"""
+        primitives = self.conservative_to_primitive(state)
+        c = np.sqrt(self.gamma * primitives.pressure / primitives.density)
+        
+        if direction == 0:
+            return abs(primitives.velocity_x) + c
+        else:
+            return abs(primitives.velocity_y) + c
+    
     def compute_flux_x(self, u: np.ndarray) -> np.ndarray:
         """
         Compute flux vector in x-direction.

@@ -6,10 +6,15 @@ the various stages of FVM computation in a data-driven manner.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 import time
 import numpy as np
 from .data_container import FVMDataContainer2D
+
+if TYPE_CHECKING:
+    from fvm_framework.spatial.reconstruction.base_reconstruction import ReconstructionScheme
+    from fvm_framework.spatial.flux_calculation.base_flux import FluxCalculator
+    from fvm_framework.temporal.time_integrators import TimeIntegrator
 
 
 class ComputationStage(ABC):
@@ -69,44 +74,88 @@ class BoundaryStage(ComputationStage):
 
 
 class ReconstructionStage(ComputationStage):
-    """Stage for spatial reconstruction of interface values"""
+    """
+    Stage for spatial reconstruction of interface values.
     
-    def __init__(self, reconstruction_type: str = 'linear'):
+    This stage performs actual reconstruction to compute left and right interface states
+    from cell-centered values, storing results in the data container's interface_states arrays.
+    """
+    
+    def __init__(self, reconstruction_type: str = 'constant'):
         super().__init__("SpatialReconstruction")
         self.reconstruction_type = reconstruction_type
+        self._reconstruction_scheme: Optional['ReconstructionScheme'] = None
+        
+    def _initialize_reconstruction(self):
+        """Initialize reconstruction scheme on first use"""
+        if self._reconstruction_scheme is None:
+            from fvm_framework.spatial.reconstruction.factory import create_reconstruction
+            self._reconstruction_scheme = create_reconstruction(self.reconstruction_type)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
-        """Perform spatial reconstruction"""
+        """Perform spatial reconstruction to compute interface states"""
         def _reconstruct():
-            # Placeholder for reconstruction implementation
-            # This will be implemented in the spatial schemes module
-            pass
+            self._initialize_reconstruction()
+            
+            # Perform reconstruction using the spatial reconstruction module
+            # Note: The reconstruction methods expect to work with ghost cells in the state array
+            x_interfaces, y_interfaces = self._reconstruction_scheme.reconstruct_all_interfaces(data)
+            x_left, x_right = x_interfaces
+            y_left, y_right = y_interfaces
+            
+            # Store interface states in data container
+            # These are interior interfaces only (nx+1, ny) and (nx, ny+1)
+            data.interface_states_x = (x_left, x_right)
+            data.interface_states_y = (y_left, y_right)
             
         self._time_execution(_reconstruct)
 
 
 class FluxStage(ComputationStage):
-    """Stage for computing numerical fluxes using unified spatial discretization"""
+    """Stage for computing numerical fluxes using flux calculators directly"""
     
-    def __init__(self, spatial_scheme: str = 'lax_friedrichs', **scheme_params):
+    def __init__(self, flux_type: str = 'lax_friedrichs', **flux_params):
         super().__init__("FluxComputation")
-        self.spatial_scheme_name = spatial_scheme
-        self.scheme_params = scheme_params
+        self.flux_type = flux_type
+        self.flux_params = flux_params
+        self._flux_calculator: Optional['FluxCalculator'] = None
         
-        # Import here to avoid circular imports
-        from fvm_framework.spatial.factory import SpatialDiscretizationFactory
-        self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **scheme_params)
+    def _initialize_flux_calculator(self):
+        """Initialize flux calculator on first use"""
+        if self._flux_calculator is None:
+            from fvm_framework.spatial.flux_calculation.factory import create_flux_calculator
+            self._flux_calculator = create_flux_calculator(self.flux_type, **self.flux_params)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
-        """Compute numerical fluxes using the selected spatial scheme"""
+        """Compute numerical fluxes using flux calculator directly"""
         def _compute_fluxes():
             # Get physics equation from kwargs
             physics_equation = kwargs.get('physics_equation')
             if physics_equation is None:
                 raise ValueError("FluxStage requires physics_equation in kwargs")
             
-            # Compute fluxes using unified interface
-            self.spatial_scheme.compute_fluxes(data, physics_equation, **kwargs)
+            self._initialize_flux_calculator()
+            
+            # Get interface states from ReconstructionStage
+            if data.interface_states_x is None or data.interface_states_y is None:
+                raise ValueError("FluxStage requires interface states from ReconstructionStage")
+            
+            x_left, x_right = data.interface_states_x
+            y_left, y_right = data.interface_states_y
+            
+            # Compute fluxes directly using flux calculator
+            # Store in interior portion of flux arrays using indexing helpers
+            interior_flux_x = self._flux_calculator.compute_all_x_fluxes(
+                x_left, x_right, physics_equation, **kwargs
+            )
+            interior_flux_y = self._flux_calculator.compute_all_y_fluxes(
+                y_left, y_right, physics_equation, **kwargs
+            )
+            
+            # Store in data container flux arrays (map to ghost cell flux arrays)
+            ng = data.ng
+            data.flux_x[:, ng:ng+data.nx+1, ng:ng+data.ny] = interior_flux_x
+            data.flux_y[:, ng:ng+data.nx, ng:ng+data.ny+1] = interior_flux_y
             
         self._time_execution(_compute_fluxes)
 
@@ -132,62 +181,38 @@ class SourceStage(ComputationStage):
 
 
 class TemporalStage(ComputationStage):
-    """Stage for temporal integration using unified spatial discretization"""
+    """Stage for temporal integration using precomputed fluxes"""
     
-    def __init__(self, scheme: str = 'rk3', spatial_scheme: str = 'lax_friedrichs', **spatial_params):
+    def __init__(self, scheme: str = 'rk3'):
         super().__init__("TemporalIntegration")
         self.scheme = scheme
-        self.spatial_scheme_name = spatial_scheme
-        self.spatial_params = spatial_params
+        self._integrator: Optional['TimeIntegrator'] = None
         
-        # Import here to avoid circular imports
-        from fvm_framework.temporal.time_integrators import TimeIntegratorFactory
-        from fvm_framework.spatial.factory import SpatialDiscretizationFactory
-        
-        self.integrator = TimeIntegratorFactory.create(scheme)
-        self.spatial_scheme = SpatialDiscretizationFactory.create(spatial_scheme, **spatial_params)
+    def _initialize_integrator(self):
+        """Initialize time integrator on first use"""
+        if self._integrator is None:
+            from fvm_framework.temporal.time_integrators import TimeIntegratorFactory
+            self._integrator = TimeIntegratorFactory.create(self.scheme)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
-        """Perform temporal integration using unified spatial discretization"""
+        """Perform temporal integration using precomputed fluxes"""
         def _time_integrate():
             dt = kwargs.get('dt')
-            physics_equation = kwargs.get('physics_equation')
+            if dt is None:
+                raise ValueError("TemporalStage requires 'dt' in kwargs")
             
-            if dt is None or physics_equation is None:
-                raise ValueError("TemporalStage requires 'dt' and 'physics_equation' in kwargs")
+            self._initialize_integrator()
             
-            # Define residual function that uses our spatial scheme
+            # Simple residual function that uses precomputed fluxes
             def residual_function(data_container: FVMDataContainer2D, **res_kwargs) -> np.ndarray:
-                # Compute fluxes using spatial scheme
-                self.spatial_scheme.compute_fluxes(data_container, physics_equation, **kwargs)
-                
-                # Compute flux divergence (residual = -∇·F)
-                if hasattr(self.spatial_scheme, 'compute_flux_divergence'):
-                    residual = self.spatial_scheme.compute_flux_divergence(data_container)
-                else:
-                    # Default flux divergence computation
-                    residual = self._compute_flux_divergence(data_container)
-                
-                return residual
+                # Flux divergence is computed using fluxes already stored in data_container
+                # by previous stages (ReconstructionStage -> FluxStage)
+                return data_container.compute_residual()
             
             # Apply time integrator
-            self.integrator.integrate(data, dt, residual_function, **kwargs)
+            self._integrator.integrate(data, dt, residual_function, **kwargs)
             
         self._time_execution(_time_integrate)
-    
-    def _compute_flux_divergence(self, data: FVMDataContainer2D) -> np.ndarray:
-        """Default flux divergence computation"""
-        residual = np.zeros_like(data.state)
-        
-        # Interior points only
-        for i in range(1, data.nx - 1):
-            for j in range(1, data.ny - 1):
-                # Flux divergence: ∇·F = (F_{i+1/2} - F_{i-1/2})/dx + (G_{j+1/2} - G_{j-1/2})/dy
-                flux_div_x = (data.flux_x[:, i+1, j] - data.flux_x[:, i, j]) / data.geometry.dx
-                flux_div_y = (data.flux_y[:, i, j+1] - data.flux_y[:, i, j]) / data.geometry.dy
-                residual[:, i, j] = -(flux_div_x + flux_div_y)
-        
-        return residual
 
 
 class FVMPipeline:
@@ -195,37 +220,37 @@ class FVMPipeline:
     Main pipeline orchestrator for finite volume method computation.
     
     The pipeline executes stages in the following order:
-    1. Boundary conditions
-    2. Spatial reconstruction
-    3. Flux computation
-    4. Source term computation
-    5. Temporal integration
+    1. BoundaryStage: Apply boundary conditions → fill ghost cells
+    2. ReconstructionStage: Spatial reconstruction → compute interface states
+    3. FluxStage: Flux computation → compute numerical fluxes from interface states  
+    4. SourceStage: Source term computation → compute source terms
+    5. TemporalStage: Temporal integration → advance solution using residual = -∇·F + S
     """
     
     def __init__(self, 
                  boundary_type: str = 'periodic',
-                 reconstruction_type: str = 'linear', 
-                 spatial_scheme: str = 'lax_friedrichs',
+                 reconstruction_type: str = 'constant', 
+                 flux_type: str = 'lax_friedrichs',
                  time_scheme: str = 'rk3',
                  source_type: Optional[str] = None,
-                 **spatial_params):
+                 **flux_params):
         """
-        Initialize the FVM pipeline with unified spatial discretization.
+        Initialize the FVM pipeline with modular components.
         
         Args:
             boundary_type: Type of boundary conditions
-            reconstruction_type: Spatial reconstruction method  
-            spatial_scheme: Spatial discretization scheme ('lax_friedrichs', 'tvdlf', 'hll', etc.)
-            time_scheme: Time integration scheme
+            reconstruction_type: Spatial reconstruction method ('constant', 'slope_limiter', 'weno5', etc.)
+            flux_type: Flux calculator type ('lax_friedrichs', 'hll', 'hllc', etc.)
+            time_scheme: Time integration scheme ('euler', 'rk2', 'rk3', 'rk4')
             source_type: Source term type (None for no sources)
-            **spatial_params: Additional parameters for spatial scheme (e.g., limiter='minmod')
+            **flux_params: Additional parameters for flux calculator (e.g., riemann_solver='hllc')
         """
         self.stages: List[ComputationStage] = [
             BoundaryStage(boundary_type),
             ReconstructionStage(reconstruction_type),
-            FluxStage(spatial_scheme, **spatial_params),
+            FluxStage(flux_type, **flux_params),
             SourceStage(source_type),
-            TemporalStage(time_scheme, spatial_scheme, **spatial_params)
+            TemporalStage(time_scheme)
         ]
         
         self.total_steps = 0
