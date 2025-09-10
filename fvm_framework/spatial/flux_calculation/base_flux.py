@@ -41,6 +41,35 @@ class FluxCalculator(ABC):
         """
         pass
     
+    def compute_numerical_flux_vectorized(self, left_states: np.ndarray, right_states: np.ndarray,
+                                        physics_equation, direction: int, **kwargs) -> np.ndarray:
+        """
+        Vectorized computation of numerical fluxes.
+        
+        Default implementation falls back to loop. Subclasses should override
+        this method for better performance.
+        
+        Args:
+            left_states: Left interface states, shape (num_vars, num_interfaces)
+            right_states: Right interface states, shape (num_vars, num_interfaces)
+            physics_equation: Physics equation object
+            direction: 0 for x-direction, 1 for y-direction
+            **kwargs: Additional parameters
+            
+        Returns:
+            Numerical fluxes, shape (num_vars, num_interfaces)
+        """
+        num_vars, num_interfaces = left_states.shape
+        fluxes = np.zeros((num_vars, num_interfaces))
+        
+        for i in range(num_interfaces):
+            fluxes[:, i] = self.compute_numerical_flux(
+                left_states[:, i], right_states[:, i], 
+                physics_equation, direction, **kwargs
+            )
+        
+        return fluxes
+    
     def compute_all_x_fluxes(self, left_states: np.ndarray, right_states: np.ndarray,
                            physics_equation, **kwargs) -> np.ndarray:
         """
@@ -58,12 +87,16 @@ class FluxCalculator(ABC):
         num_vars, nx_plus_1, ny = left_states.shape
         fluxes = np.zeros((num_vars, nx_plus_1, ny))
         
+        # Try to use vectorized computation
         for j in range(ny):
-            for i in range(nx_plus_1):
-                fluxes[:, i, j] = self.compute_numerical_flux(
-                    left_states[:, i, j], right_states[:, i, j], 
-                    physics_equation, direction=0, **kwargs
-                )
+            # Reshape for vectorized computation: (num_vars, nx+1)
+            left_j = left_states[:, :, j]
+            right_j = right_states[:, :, j]
+            
+            # Use vectorized method
+            fluxes[:, :, j] = self.compute_numerical_flux_vectorized(
+                left_j, right_j, physics_equation, direction=0, **kwargs
+            )
         
         return fluxes
     
@@ -84,12 +117,16 @@ class FluxCalculator(ABC):
         num_vars, nx, ny_plus_1 = left_states.shape
         fluxes = np.zeros((num_vars, nx, ny_plus_1))
         
+        # Try to use vectorized computation
         for i in range(nx):
-            for j in range(ny_plus_1):
-                fluxes[:, i, j] = self.compute_numerical_flux(
-                    left_states[:, i, j], right_states[:, i, j],
-                    physics_equation, direction=1, **kwargs
-                )
+            # Reshape for vectorized computation: (num_vars, ny+1)
+            left_i = left_states[:, i, :]
+            right_i = right_states[:, i, :]
+            
+            # Use vectorized method
+            fluxes[:, i, :] = self.compute_numerical_flux_vectorized(
+                left_i, right_i, physics_equation, direction=1, **kwargs
+            )
         
         return fluxes
     
@@ -159,6 +196,47 @@ class FluxCalculator(ABC):
             True if wave speed is required
         """
         return False  # Override in subclasses if needed
+    
+    def compute_fluxes(self, data: FVMDataContainer2D, **kwargs) -> None:
+        """
+        Unified interface to compute fluxes using FVMDataContainer2D.
+        
+        This method provides a unified interface that takes the data container
+        and computes fluxes, storing them directly in the data container.
+        
+        Args:
+            data: FVMDataContainer2D containing interface states and flux arrays
+            **kwargs: Additional parameters including physics_equation
+        """
+        # Get physics equation from kwargs
+        physics_equation = kwargs.get('physics_equation')
+        if physics_equation is None:
+            raise ValueError("FluxCalculator requires physics_equation in kwargs")
+        
+        # Check for interface states
+        if data.interface_states_x is None or data.interface_states_y is None:
+            raise ValueError("FluxCalculator requires interface states from ReconstructionStage")
+        
+        x_left, x_right = data.interface_states_x
+        y_left, y_right = data.interface_states_y
+        
+        # Remove physics_equation from kwargs to avoid duplicate arguments
+        flux_kwargs = {k: v for k, v in kwargs.items() if k != 'physics_equation'}
+        # Add data parameter for wave speed computation
+        flux_kwargs['data'] = data
+        
+        # Compute fluxes using existing methods
+        interior_flux_x = self.compute_all_x_fluxes(
+            x_left, x_right, physics_equation, **flux_kwargs
+        )
+        interior_flux_y = self.compute_all_y_fluxes(
+            y_left, y_right, physics_equation, **flux_kwargs
+        )
+        
+        # Store in data container flux arrays (map to ghost cell flux arrays)
+        ng = data.ng
+        data.flux_x[:, ng:ng+data.nx+1, ng:ng+data.ny] = interior_flux_x
+        data.flux_y[:, ng:ng+data.nx, ng:ng+data.ny+1] = interior_flux_y
 
 
 class DissipativeFluxCalculator(FluxCalculator):

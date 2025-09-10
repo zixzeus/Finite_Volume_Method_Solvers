@@ -68,25 +68,18 @@ class ComparisonParameters:
                     'linestyle': '-'
                 },
                 {
-                    'name': 'Second Order (Slope Limiter)',
-                    'reconstruction_type': 'slope_limiter', 
-                    'flux_type': 'lax_friedrichs',
-                    'color': 'red',
-                    'linestyle': '--'
-                },
-                {
                     'name': 'Lax-Friedrichs (Van Leer Limiter)',
                     'reconstruction_type': 'slope_limiter',
+                    'reconstruction_params': {'limiter': 'van_leer'},
                     'flux_type': 'lax_friedrichs',
-                    'flux_params': {'limiter_type': 'van_leer'},
                     'color': 'green',
                     'linestyle': '-.'
                 },
                 {
                     'name': 'Lax-Friedrichs (Superbee Limiter)',
                     'reconstruction_type': 'slope_limiter',
+                    'reconstruction_params': {'limiter': 'superbee'},
                     'flux_type': 'lax_friedrichs',
-                    'flux_params': {'limiter_type': 'superbee'},
                     'color': 'purple',
                     'linestyle': ':'
                 }
@@ -129,7 +122,8 @@ class AdvectionComparison:
                 'time_scheme': 'euler',
                 'cfl_number': self.params.cfl_number,
                 'boundary_type': 'periodic',
-                'flux_params': {}
+                'flux_params': method.get('flux_params', {}),
+                'reconstruction_params': method.get('reconstruction_params', {})
             },
             'simulation': {
                 'final_time': self.params.final_time,

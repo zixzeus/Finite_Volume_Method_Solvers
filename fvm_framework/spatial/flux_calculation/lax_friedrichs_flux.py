@@ -44,14 +44,7 @@ class LaxFriedrichsFlux(DissipativeFluxCalculator):
             Numerical flux vector
         """
         # Get wave speed
-        alpha = kwargs.get('alpha', None)
-        if alpha is None:
-            # Try to compute from physics equation
-            data = kwargs.get('data', None)
-            if data is not None and hasattr(physics_equation, 'compute_max_wave_speed'):
-                alpha = physics_equation.compute_max_wave_speed(data)
-            else:
-                alpha = 1.0  # Fallback
+        alpha = kwargs.get("alpha",1)
         
         # Compute physical fluxes
         f_left = self.compute_physical_flux(left_state, physics_equation, direction, **kwargs)
@@ -60,85 +53,65 @@ class LaxFriedrichsFlux(DissipativeFluxCalculator):
         # Lax-Friedrichs flux formula
         return 0.5 * (f_left + f_right) - 0.5 * alpha * (right_state - left_state)
     
+    def compute_numerical_flux_vectorized(self, left_states: np.ndarray, right_states: np.ndarray,
+                                        physics_equation, direction: int, **kwargs) -> np.ndarray:
+        """
+        Vectorized Lax-Friedrichs flux computation.
+        
+        Args:
+            left_states: Left interface states, shape (num_vars, num_interfaces)
+            right_states: Right interface states, shape (num_vars, num_interfaces)
+            physics_equation: Physics equation object
+            direction: 0 for x-direction, 1 for y-direction
+            **kwargs: Additional parameters
+            
+        Returns:
+            Numerical fluxes, shape (num_vars, num_interfaces)
+        """
+        # Get wave speed
+        alpha = kwargs.get("alpha", 1)
+        
+        # Compute physical fluxes vectorized
+        num_vars, num_interfaces = left_states.shape
+        f_left = np.zeros((num_vars, num_interfaces))
+        f_right = np.zeros((num_vars, num_interfaces))
+        
+        for i in range(num_interfaces):
+            f_left[:, i] = self.compute_physical_flux(left_states[:, i], physics_equation, direction, **kwargs)
+            f_right[:, i] = self.compute_physical_flux(right_states[:, i], physics_equation, direction, **kwargs)
+        
+        # Vectorized Lax-Friedrichs formula
+        return 0.5 * (f_left + f_right) - 0.5 * alpha * (right_states - left_states)
+    
     def compute_all_x_fluxes(self, left_states: np.ndarray, right_states: np.ndarray,
                            physics_equation, **kwargs) -> np.ndarray:
         """
         Compute all Lax-Friedrichs fluxes in x-direction efficiently.
         
-        Args:
-            left_states: Left interface states, shape (num_vars, nx+1, ny)
-            right_states: Right interface states, shape (num_vars, nx+1, ny)
-            physics_equation: Physics equation object
-            **kwargs: Additional parameters
-            
-        Returns:
-            Numerical fluxes, shape (num_vars, nx+1, ny)
+        Pre-computes wave speed once, then uses base class vectorized method.
         """
-        # Get or compute wave speed once for efficiency
-        alpha = kwargs.get('alpha', None)
-        if alpha is None:
-            data = kwargs.get('data', None)
-            if data is not None and hasattr(physics_equation, 'compute_max_wave_speed'):
-                alpha = physics_equation.compute_max_wave_speed(data)
-                kwargs['alpha'] = alpha  # Cache for individual flux computations
-            else:
-                alpha = 1.0
-                kwargs['alpha'] = alpha
+        # Pre-compute wave speed once for efficiency
+        data = kwargs.get("data")
+        alpha = physics_equation.compute_max_wave_speed(data)
+        kwargs["alpha"] = alpha
         
-        # Compute fluxes using vectorized approach
-        nx_interfaces, ny = left_states.shape[1], left_states.shape[2]
-        num_vars = left_states.shape[0]
-        fluxes = np.zeros((num_vars, nx_interfaces, ny))
-        
-        for j in range(ny):
-            for i in range(nx_interfaces):
-                u_left = left_states[:, i, j]
-                u_right = right_states[:, i, j]
-                fluxes[:, i, j] = self.compute_numerical_flux(
-                    u_left, u_right, physics_equation, direction=0, **kwargs
-                )
-        
-        return fluxes
+        # Use base class vectorized implementation
+        return super().compute_all_x_fluxes(left_states, right_states, physics_equation, **kwargs)
     
     def compute_all_y_fluxes(self, left_states: np.ndarray, right_states: np.ndarray,
                            physics_equation, **kwargs) -> np.ndarray:
         """
         Compute all Lax-Friedrichs fluxes in y-direction efficiently.
         
-        Args:
-            left_states: Left interface states, shape (num_vars, nx, ny+1)
-            right_states: Right interface states, shape (num_vars, nx, ny+1)
-            physics_equation: Physics equation object
-            **kwargs: Additional parameters
-            
-        Returns:
-            Numerical fluxes, shape (num_vars, nx, ny+1)
+        Pre-computes wave speed once, then uses base class vectorized method.
         """
-        # Get or compute wave speed once for efficiency
-        alpha = kwargs.get('alpha', None)
-        if alpha is None:
-            data = kwargs.get('data', None)
-            if data is not None and hasattr(physics_equation, 'compute_max_wave_speed'):
-                alpha = physics_equation.compute_max_wave_speed(data)
-                kwargs['alpha'] = alpha  # Cache for individual flux computations
-            else:
-                alpha = 1.0
-                kwargs['alpha'] = alpha
+        # Pre-compute wave speed once for efficiency
+        data = kwargs.get("data")
+        alpha = physics_equation.compute_max_wave_speed(data)
+        kwargs["alpha"] = alpha
         
-        # Compute fluxes using vectorized approach
-        nx, ny_interfaces = left_states.shape[1], left_states.shape[2]
-        num_vars = left_states.shape[0]
-        fluxes = np.zeros((num_vars, nx, ny_interfaces))
-        
-        for i in range(nx):
-            for j in range(ny_interfaces):
-                u_left = left_states[:, i, j]
-                u_right = right_states[:, i, j]
-                fluxes[:, i, j] = self.compute_numerical_flux(
-                    u_left, u_right, physics_equation, direction=1, **kwargs
-                )
-        
-        return fluxes
+        # Use base class vectorized implementation
+        return super().compute_all_y_fluxes(left_states, right_states, physics_equation, **kwargs)
     
     def needs_wave_speed(self) -> bool:
         """Lax-Friedrichs flux needs maximum wave speed"""

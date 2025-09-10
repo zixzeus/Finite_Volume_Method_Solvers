@@ -51,12 +51,13 @@ class MUSCLReconstruction(SecondOrderReconstruction, LimiterMixin):
         Reconstruct states at x-direction interfaces using MUSCL.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at x-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Compute MUSCL slopes in x-direction
         slopes = self._compute_muscl_slopes_x(data)
@@ -66,21 +67,24 @@ class MUSCLReconstruction(SecondOrderReconstruction, LimiterMixin):
         right_states = np.zeros((num_vars, nx + 1, ny))
         
         for j in range(ny):
+            # Map interior j to state array index
+            j_state = j + ng
+            
             for i in range(nx + 1):
                 if i == 0:
-                    # Left boundary
-                    left_states[:, i, j] = data.state[:, 0, j]
-                    right_states[:, i, j] = data.state[:, 0, j]
+                    # Left boundary interface: use left ghost and first interior cell
+                    left_states[:, i, j] = data.state[:, ng - 1, j_state]  # Left ghost cell
+                    right_states[:, i, j] = data.state[:, ng, j_state] + 0.5 * slopes[:, 0, j]  # First interior cell with slope
                 elif i == nx:
-                    # Right boundary
-                    left_states[:, i, j] = data.state[:, -1, j]
-                    right_states[:, i, j] = data.state[:, -1, j]
+                    # Right boundary interface: use last interior and right ghost cell
+                    left_states[:, i, j] = data.state[:, ng + nx - 1, j_state] + 0.5 * slopes[:, nx-1, j]  # Last interior cell with slope
+                    right_states[:, i, j] = data.state[:, ng + nx, j_state]  # Right ghost cell
                 else:
                     # Interior interface: MUSCL reconstruction
                     # Left state: extrapolate from left cell
-                    left_states[:, i, j] = data.state[:, i-1, j] + 0.5 * slopes[:, i-1, j]
+                    left_states[:, i, j] = data.state[:, ng + i - 1, j_state] + 0.5 * slopes[:, i-1, j]
                     # Right state: extrapolate from right cell
-                    right_states[:, i, j] = data.state[:, i, j] - 0.5 * slopes[:, i, j]
+                    right_states[:, i, j] = data.state[:, ng + i, j_state] - 0.5 * slopes[:, i, j]
         
         return left_states, right_states
     
@@ -89,12 +93,13 @@ class MUSCLReconstruction(SecondOrderReconstruction, LimiterMixin):
         Reconstruct states at y-direction interfaces using MUSCL.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at y-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Compute MUSCL slopes in y-direction
         slopes = self._compute_muscl_slopes_y(data)
@@ -104,48 +109,58 @@ class MUSCLReconstruction(SecondOrderReconstruction, LimiterMixin):
         right_states = np.zeros((num_vars, nx, ny + 1))
         
         for i in range(nx):
+            # Map interior i to state array index
+            i_state = i + ng
+            
             for j in range(ny + 1):
                 if j == 0:
-                    # Bottom boundary
-                    left_states[:, i, j] = data.state[:, i, 0]
-                    right_states[:, i, j] = data.state[:, i, 0]
+                    # Bottom boundary interface: use bottom ghost and first interior cell
+                    left_states[:, i, j] = data.state[:, i_state, ng - 1]  # Bottom ghost cell
+                    right_states[:, i, j] = data.state[:, i_state, ng] + 0.5 * slopes[:, i, 0]  # First interior cell with slope
                 elif j == ny:
-                    # Top boundary
-                    left_states[:, i, j] = data.state[:, i, -1]
-                    right_states[:, i, j] = data.state[:, i, -1]
+                    # Top boundary interface: use last interior and top ghost cell
+                    left_states[:, i, j] = data.state[:, i_state, ng + ny - 1] + 0.5 * slopes[:, i, ny-1]  # Last interior cell with slope
+                    right_states[:, i, j] = data.state[:, i_state, ng + ny]  # Top ghost cell
                 else:
                     # Interior interface: MUSCL reconstruction
                     # Left state: extrapolate from bottom cell
-                    left_states[:, i, j] = data.state[:, i, j-1] + 0.5 * slopes[:, i, j-1]
+                    left_states[:, i, j] = data.state[:, i_state, ng + j - 1] + 0.5 * slopes[:, i, j-1]
                     # Right state: extrapolate from top cell
-                    right_states[:, i, j] = data.state[:, i, j] - 0.5 * slopes[:, i, j]
+                    right_states[:, i, j] = data.state[:, i_state, ng + j] - 0.5 * slopes[:, i, j]
         
         return left_states, right_states
     
     def _compute_muscl_slopes_x(self, data: FVMDataContainer2D) -> np.ndarray:
         """Compute MUSCL slopes in x-direction"""
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         slopes = np.zeros((num_vars, nx, ny))
         
         for var in range(num_vars):
             for j in range(ny):
+                # Map interior j to state array index
+                j_state = j + ng
+                
                 for i in range(nx):
-                    # Compute forward and backward differences
+                    # Map interior i to state array index
+                    i_state = i + ng
+                    
+                    # Compute forward and backward differences using ghost cells
                     if i == 0:
-                        # Left boundary: forward difference
+                        # Left boundary: can use ghost cell for backward difference
                         if nx > 1:
-                            forward_diff = data.state[var, i+1, j] - data.state[var, i, j]
-                            backward_diff = forward_diff  # Use forward as backward
+                            forward_diff = data.state[var, i_state + 1, j_state] - data.state[var, i_state, j_state]
+                            backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state - 1, j_state]  # Uses ghost cell
                         else:
                             forward_diff = backward_diff = 0.0
                     elif i == nx - 1:
-                        # Right boundary: backward difference
-                        backward_diff = data.state[var, i, j] - data.state[var, i-1, j]
-                        forward_diff = backward_diff  # Use backward as forward
+                        # Right boundary: can use ghost cell for forward difference
+                        backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state - 1, j_state]
+                        forward_diff = data.state[var, i_state + 1, j_state] - data.state[var, i_state, j_state]  # Uses ghost cell
                     else:
                         # Interior: both differences available
-                        forward_diff = data.state[var, i+1, j] - data.state[var, i, j]
-                        backward_diff = data.state[var, i, j] - data.state[var, i-1, j]
+                        forward_diff = data.state[var, i_state + 1, j_state] - data.state[var, i_state, j_state]
+                        backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state - 1, j_state]
                     
                     # MUSCL slope computation
                     slopes[var, i, j] = self._compute_muscl_slope(forward_diff, backward_diff)
@@ -155,27 +170,34 @@ class MUSCLReconstruction(SecondOrderReconstruction, LimiterMixin):
     def _compute_muscl_slopes_y(self, data: FVMDataContainer2D) -> np.ndarray:
         """Compute MUSCL slopes in y-direction"""
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         slopes = np.zeros((num_vars, nx, ny))
         
         for var in range(num_vars):
             for i in range(nx):
+                # Map interior i to state array index
+                i_state = i + ng
+                
                 for j in range(ny):
-                    # Compute forward and backward differences
+                    # Map interior j to state array index
+                    j_state = j + ng
+                    
+                    # Compute forward and backward differences using ghost cells
                     if j == 0:
-                        # Bottom boundary: forward difference
+                        # Bottom boundary: can use ghost cell for backward difference
                         if ny > 1:
-                            forward_diff = data.state[var, i, j+1] - data.state[var, i, j]
-                            backward_diff = forward_diff  # Use forward as backward
+                            forward_diff = data.state[var, i_state, j_state + 1] - data.state[var, i_state, j_state]
+                            backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state, j_state - 1]  # Uses ghost cell
                         else:
                             forward_diff = backward_diff = 0.0
                     elif j == ny - 1:
-                        # Top boundary: backward difference
-                        backward_diff = data.state[var, i, j] - data.state[var, i, j-1]
-                        forward_diff = backward_diff  # Use backward as forward
+                        # Top boundary: can use ghost cell for forward difference
+                        backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state, j_state - 1]
+                        forward_diff = data.state[var, i_state, j_state + 1] - data.state[var, i_state, j_state]  # Uses ghost cell
                     else:
                         # Interior: both differences available
-                        forward_diff = data.state[var, i, j+1] - data.state[var, i, j]
-                        backward_diff = data.state[var, i, j] - data.state[var, i, j-1]
+                        forward_diff = data.state[var, i_state, j_state + 1] - data.state[var, i_state, j_state]
+                        backward_diff = data.state[var, i_state, j_state] - data.state[var, i_state, j_state - 1]
                     
                     # MUSCL slope computation
                     slopes[var, i, j] = self._compute_muscl_slope(forward_diff, backward_diff)

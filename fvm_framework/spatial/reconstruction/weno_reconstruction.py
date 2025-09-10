@@ -76,12 +76,13 @@ class WENOReconstruction(HighOrderReconstruction):
         Reconstruct states at x-direction interfaces using WENO.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at x-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Initialize interface states
         left_states = np.zeros((num_vars, nx + 1, ny))
@@ -89,11 +90,14 @@ class WENOReconstruction(HighOrderReconstruction):
         
         for var in range(num_vars):
             for j in range(ny):
-                # Extract 1D slice for reconstruction
-                u_slice = data.state[var, :, j]
+                # Map interior j to state array index
+                j_state = j + ng
                 
-                # Reconstruct left and right states at all x-interfaces
-                u_left, u_right = self._weno_reconstruct_1d(u_slice, direction='x')
+                # Extract 1D slice INCLUDING ghost cells for WENO stencils
+                u_slice = data.state[var, :, j_state]
+                
+                # Reconstruct left and right states at interior interfaces only
+                u_left, u_right = self._weno_reconstruct_1d(u_slice, nx, ng, direction='x')
                 
                 left_states[var, :, j] = u_left
                 right_states[var, :, j] = u_right
@@ -105,12 +109,13 @@ class WENOReconstruction(HighOrderReconstruction):
         Reconstruct states at y-direction interfaces using WENO.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at y-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Initialize interface states
         left_states = np.zeros((num_vars, nx, ny + 1))
@@ -118,67 +123,84 @@ class WENOReconstruction(HighOrderReconstruction):
         
         for var in range(num_vars):
             for i in range(nx):
-                # Extract 1D slice for reconstruction
-                u_slice = data.state[var, i, :]
+                # Map interior i to state array index
+                i_state = i + ng
                 
-                # Reconstruct left and right states at all y-interfaces
-                u_left, u_right = self._weno_reconstruct_1d(u_slice, direction='y')
+                # Extract 1D slice INCLUDING ghost cells for WENO stencils
+                u_slice = data.state[var, i_state, :]
+                
+                # Reconstruct left and right states at interior interfaces only
+                u_left, u_right = self._weno_reconstruct_1d(u_slice, ny, ng, direction='y')
                 
                 left_states[var, i, :] = u_left
                 right_states[var, i, :] = u_right
         
         return left_states, right_states
     
-    def _weno_reconstruct_1d(self, u: np.ndarray, direction: str) -> Tuple[np.ndarray, np.ndarray]:
+    def _weno_reconstruct_1d(self, u: np.ndarray, n_interior: int, ng: int, direction: str) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Perform WENO reconstruction on 1D array.
+        Perform WENO reconstruction on 1D array with ghost cells.
         
         Args:
-            u: 1D array of cell-centered values
+            u: 1D array of cell-centered values including ghost cells
+            n_interior: Number of interior cells
+            ng: Number of ghost cells
             direction: 'x' or 'y' for boundary handling
             
         Returns:
-            Tuple of (left_interface_states, right_interface_states)
+            Tuple of (left_interface_states, right_interface_states) for interior interfaces
         """
-        n = len(u)
-        u_left = np.zeros(n + 1)
-        u_right = np.zeros(n + 1)
+        # Initialize interface states for interior interfaces only
+        u_left = np.zeros(n_interior + 1)
+        u_right = np.zeros(n_interior + 1)
         
         if self.order == 3:
             # WENO3 reconstruction
-            for i in range(n + 1):
-                if i == 0 or i == n:
-                    # Boundary: use constant extrapolation
-                    if i == 0:
-                        u_left[i] = u_right[i] = u[0]
-                    else:
-                        u_left[i] = u_right[i] = u[-1]
+            for i in range(n_interior + 1):
+                if i == 0:
+                    # Left boundary interface: use ghost cell and first interior
+                    u_left[i] = u[ng - 1]  # Left ghost cell
+                    u_right[i] = u[ng]     # First interior cell
+                elif i == n_interior:
+                    # Right boundary interface: use last interior and ghost cell
+                    u_left[i] = u[ng + n_interior - 1]  # Last interior cell
+                    u_right[i] = u[ng + n_interior]     # Right ghost cell
                 else:
-                    # Interior interface i (between cells i-1 and i)
-                    u_left[i] = self._weno3_reconstruct_left(u, i)
-                    u_right[i] = self._weno3_reconstruct_right(u, i)
+                    # Interior interface i (between interior cells i-1 and i)
+                    cell_idx = ng + i  # Map to full array index
+                    u_left[i] = self._weno3_reconstruct_left(u, cell_idx)
+                    u_right[i] = self._weno3_reconstruct_right(u, cell_idx)
                     
         elif self.order == 5:
             # WENO5 reconstruction
-            for i in range(n + 1):
-                if i <= 1 or i >= n - 1:
-                    # Near boundaries: fall back to lower order or constant
-                    if i == 0:
-                        u_left[i] = u_right[i] = u[0]
-                    elif i == 1:
-                        # Linear interpolation
-                        u_left[i] = 0.5 * (u[0] + u[1])
-                        u_right[i] = u_left[i]
-                    elif i == n - 1:
-                        # Linear interpolation
-                        u_left[i] = 0.5 * (u[-2] + u[-1])
-                        u_right[i] = u_left[i]
+            for i in range(n_interior + 1):
+                if i == 0:
+                    # Left boundary interface
+                    u_left[i] = u[ng - 1]  # Left ghost cell
+                    u_right[i] = u[ng]     # First interior cell
+                elif i == n_interior:
+                    # Right boundary interface
+                    u_left[i] = u[ng + n_interior - 1]  # Last interior cell
+                    u_right[i] = u[ng + n_interior]     # Right ghost cell
+                elif i <= 1 or i >= n_interior - 1:
+                    # Near boundaries: fall back to lower order
+                    cell_idx = ng + i
+                    if i == 1 and n_interior > 1:
+                        # Can use some WENO, but be careful near boundaries
+                        u_left[i] = self._weno3_reconstruct_left(u, cell_idx)
+                        u_right[i] = self._weno3_reconstruct_right(u, cell_idx)
+                    elif i == n_interior - 1 and n_interior > 1:
+                        u_left[i] = self._weno3_reconstruct_left(u, cell_idx)
+                        u_right[i] = self._weno3_reconstruct_right(u, cell_idx)
                     else:
-                        u_left[i] = u_right[i] = u[-1]
+                        # Fallback
+                        u_left[i] = u[ng + i - 1]
+                        u_right[i] = u[ng + i]
                 else:
                     # Interior interface with full WENO5 stencil
-                    u_left[i] = self._weno5_reconstruct_left(u, i)
-                    u_right[i] = self._weno5_reconstruct_right(u, i)
+                    cell_idx = ng + i
+                    u_left[i] = self._weno5_reconstruct_left(u, cell_idx)
+                    u_right[i] = self._weno5_reconstruct_right(u, cell_idx)
         
         return u_left, u_right
     

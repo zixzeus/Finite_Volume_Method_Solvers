@@ -88,16 +88,17 @@ class ReconstructionStage(ComputationStage):
     from cell-centered values, storing results in the data container's interface_states arrays.
     """
     
-    def __init__(self, reconstruction_type: str = 'constant'):
+    def __init__(self, reconstruction_type: str = 'constant', **reconstruction_params):
         super().__init__("SpatialReconstruction")
         self.reconstruction_type = reconstruction_type
+        self.reconstruction_params = reconstruction_params
         self._reconstruction_scheme: Optional['ReconstructionScheme'] = None
         
     def _initialize_reconstruction(self):
         """Initialize reconstruction scheme on first use"""
         if self._reconstruction_scheme is None:
             from fvm_framework.spatial.reconstruction.factory import create_reconstruction
-            self._reconstruction_scheme = create_reconstruction(self.reconstruction_type)
+            self._reconstruction_scheme = create_reconstruction(self.reconstruction_type, **self.reconstruction_params)
         
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
         """Perform spatial reconstruction to compute interface states"""
@@ -136,35 +137,8 @@ class FluxStage(ComputationStage):
     def process(self, data: FVMDataContainer2D, **kwargs) -> None:
         """Compute numerical fluxes using flux calculator directly"""
         def _compute_fluxes():
-            # Get physics equation from kwargs
-            physics_equation = kwargs.get('physics_equation')
-            if physics_equation is None:
-                raise ValueError("FluxStage requires physics_equation in kwargs")
-            
             self._initialize_flux_calculator()
-            
-            # Get interface states from ReconstructionStage
-            if data.interface_states_x is None or data.interface_states_y is None:
-                raise ValueError("FluxStage requires interface states from ReconstructionStage")
-            
-            x_left, x_right = data.interface_states_x
-            y_left, y_right = data.interface_states_y
-            
-            # Compute fluxes directly using flux calculator
-            # Remove physics_equation from kwargs to avoid duplicate arguments
-            flux_kwargs = {k: v for k, v in kwargs.items() if k != 'physics_equation'}
-            
-            interior_flux_x = self._flux_calculator.compute_all_x_fluxes(
-                x_left, x_right, physics_equation, **flux_kwargs
-            )
-            interior_flux_y = self._flux_calculator.compute_all_y_fluxes(
-                y_left, y_right, physics_equation, **flux_kwargs
-            )
-            
-            # Store in data container flux arrays (map to ghost cell flux arrays)
-            ng = data.ng
-            data.flux_x[:, ng:ng+data.nx+1, ng:ng+data.ny] = interior_flux_x
-            data.flux_y[:, ng:ng+data.nx, ng:ng+data.ny+1] = interior_flux_y
+            self._flux_calculator.compute_fluxes(data, **kwargs)
             
         self._time_execution(_compute_fluxes)
 
@@ -244,6 +218,7 @@ class FVMPipeline:
                  flux_type: str = 'lax_friedrichs',
                  time_scheme: str = 'rk3',
                  source_type: Optional[str] = None,
+                 reconstruction_params: Optional[dict] = None,
                  **flux_params):
         """
         Initialize the FVM pipeline with modular components.
@@ -258,7 +233,7 @@ class FVMPipeline:
         """
         self.stages: List[ComputationStage] = [
             BoundaryStage(boundary_type),
-            ReconstructionStage(reconstruction_type),
+            ReconstructionStage(reconstruction_type, **(reconstruction_params or {})),
             FluxStage(flux_type, **flux_params),
             SourceStage(source_type),
             TemporalStage(time_scheme)

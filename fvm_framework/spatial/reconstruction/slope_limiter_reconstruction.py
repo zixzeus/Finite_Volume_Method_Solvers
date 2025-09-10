@@ -36,12 +36,13 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
         Reconstruct states at x-direction interfaces using slope limiters.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at x-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Compute limited slopes in x-direction
         slopes = self._compute_limited_slopes_x(data)
@@ -51,19 +52,22 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
         right_states = np.zeros((num_vars, nx + 1, ny))
         
         for j in range(ny):
+            # Map interior j to state array index
+            j_state = j + ng
+            
             for i in range(nx + 1):
                 if i == 0:
-                    # Left boundary: both states from boundary cell
-                    left_states[:, i, j] = data.state[:, 0, j]
-                    right_states[:, i, j] = data.state[:, 0, j]
+                    # Left boundary interface: use left ghost and first interior cell
+                    left_states[:, i, j] = data.state[:, ng - 1, j_state]  # Left ghost cell
+                    right_states[:, i, j] = data.state[:, ng, j_state] + 0.5 * slopes[:, 0, j]  # First interior cell with slope
                 elif i == nx:
-                    # Right boundary: both states from boundary cell
-                    left_states[:, i, j] = data.state[:, -1, j]
-                    right_states[:, i, j] = data.state[:, -1, j]
+                    # Right boundary interface: use last interior and right ghost cell
+                    left_states[:, i, j] = data.state[:, ng + nx - 1, j_state] + 0.5 * slopes[:, nx-1, j]  # Last interior cell with slope
+                    right_states[:, i, j] = data.state[:, ng + nx, j_state]  # Right ghost cell
                 else:
                     # Interior interface: reconstruct using slopes
-                    left_states[:, i, j] = data.state[:, i-1, j] + 0.5 * slopes[:, i-1, j]
-                    right_states[:, i, j] = data.state[:, i, j] - 0.5 * slopes[:, i, j]
+                    left_states[:, i, j] = data.state[:, ng + i - 1, j_state] + 0.5 * slopes[:, i-1, j]
+                    right_states[:, i, j] = data.state[:, ng + i, j_state] - 0.5 * slopes[:, i, j]
         
         return left_states, right_states
     
@@ -72,12 +76,13 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
         Reconstruct states at y-direction interfaces using slope limiters.
         
         Args:
-            data: FVM data container
+            data: FVM data container with ghost cells
             
         Returns:
             Tuple of (left_states, right_states) at y-interfaces
         """
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         
         # Compute limited slopes in y-direction
         slopes = self._compute_limited_slopes_y(data)
@@ -87,73 +92,102 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
         right_states = np.zeros((num_vars, nx, ny + 1))
         
         for i in range(nx):
+            # Map interior i to state array index
+            i_state = i + ng
+            
             for j in range(ny + 1):
                 if j == 0:
-                    # Bottom boundary: both states from boundary cell
-                    left_states[:, i, j] = data.state[:, i, 0]
-                    right_states[:, i, j] = data.state[:, i, 0]
+                    # Bottom boundary interface: use bottom ghost and first interior cell
+                    left_states[:, i, j] = data.state[:, i_state, ng - 1]  # Bottom ghost cell
+                    right_states[:, i, j] = data.state[:, i_state, ng] + 0.5 * slopes[:, i, 0]  # First interior cell with slope
                 elif j == ny:
-                    # Top boundary: both states from boundary cell
-                    left_states[:, i, j] = data.state[:, i, -1]
-                    right_states[:, i, j] = data.state[:, i, -1]
+                    # Top boundary interface: use last interior and top ghost cell
+                    left_states[:, i, j] = data.state[:, i_state, ng + ny - 1] + 0.5 * slopes[:, i, ny-1]  # Last interior cell with slope
+                    right_states[:, i, j] = data.state[:, i_state, ng + ny]  # Top ghost cell
                 else:
                     # Interior interface: reconstruct using slopes
-                    left_states[:, i, j] = data.state[:, i, j-1] + 0.5 * slopes[:, i, j-1]
-                    right_states[:, i, j] = data.state[:, i, j] - 0.5 * slopes[:, i, j]
+                    left_states[:, i, j] = data.state[:, i_state, ng + j - 1] + 0.5 * slopes[:, i, j-1]
+                    right_states[:, i, j] = data.state[:, i_state, ng + j] - 0.5 * slopes[:, i, j]
         
         return left_states, right_states
     
     def _compute_limited_slopes_x(self, data: FVMDataContainer2D) -> np.ndarray:
         """Compute limited slopes in x-direction"""
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         slopes = np.zeros((num_vars, nx, ny))
         
         for var in range(num_vars):
             for j in range(ny):
+                # Map interior j to state array index
+                j_state = j + ng
+                
                 for i in range(1, nx-1):
+                    # Map interior i to state array index
+                    i_left = ng + i - 1
+                    i_center = ng + i
+                    i_right = ng + i + 1
+                    
                     # Central differences
-                    left_diff = data.state[var, i, j] - data.state[var, i-1, j]
-                    right_diff = data.state[var, i+1, j] - data.state[var, i, j]
+                    left_diff = data.state[var, i_center, j_state] - data.state[var, i_left, j_state]
+                    right_diff = data.state[var, i_right, j_state] - data.state[var, i_center, j_state]
                     
                     # Apply limiter
                     slopes[var, i, j] = self.limiter_function(left_diff, right_diff)
                 
                 # Boundary cells: use one-sided differences or zero slope
                 if nx > 1:
-                    # Left boundary
-                    forward_diff = data.state[var, 1, j] - data.state[var, 0, j]
+                    # Left boundary (i=0)
+                    i_center = ng
+                    i_right = ng + 1
+                    forward_diff = data.state[var, i_right, j_state] - data.state[var, i_center, j_state]
                     slopes[var, 0, j] = self.limiter_function(0.0, forward_diff)
                     
-                    # Right boundary  
-                    backward_diff = data.state[var, -1, j] - data.state[var, -2, j]
-                    slopes[var, -1, j] = self.limiter_function(backward_diff, 0.0)
+                    # Right boundary (i=nx-1)
+                    i_left = ng + nx - 2
+                    i_center = ng + nx - 1
+                    backward_diff = data.state[var, i_center, j_state] - data.state[var, i_left, j_state]
+                    slopes[var, nx-1, j] = self.limiter_function(backward_diff, 0.0)
         
         return slopes
     
     def _compute_limited_slopes_y(self, data: FVMDataContainer2D) -> np.ndarray:
         """Compute limited slopes in y-direction"""
         nx, ny, num_vars = data.nx, data.ny, data.num_vars
+        ng = data.ng
         slopes = np.zeros((num_vars, nx, ny))
         
         for var in range(num_vars):
             for i in range(nx):
+                # Map interior i to state array index
+                i_state = i + ng
+                
                 for j in range(1, ny-1):
+                    # Map interior j to state array index
+                    j_bottom = ng + j - 1
+                    j_center = ng + j
+                    j_top = ng + j + 1
+                    
                     # Central differences
-                    left_diff = data.state[var, i, j] - data.state[var, i, j-1]
-                    right_diff = data.state[var, i, j+1] - data.state[var, i, j]
+                    left_diff = data.state[var, i_state, j_center] - data.state[var, i_state, j_bottom]
+                    right_diff = data.state[var, i_state, j_top] - data.state[var, i_state, j_center]
                     
                     # Apply limiter
                     slopes[var, i, j] = self.limiter_function(left_diff, right_diff)
                 
                 # Boundary cells: use one-sided differences or zero slope
                 if ny > 1:
-                    # Bottom boundary
-                    forward_diff = data.state[var, i, 1] - data.state[var, i, 0]
+                    # Bottom boundary (j=0)
+                    j_center = ng
+                    j_top = ng + 1
+                    forward_diff = data.state[var, i_state, j_top] - data.state[var, i_state, j_center]
                     slopes[var, i, 0] = self.limiter_function(0.0, forward_diff)
                     
-                    # Top boundary
-                    backward_diff = data.state[var, i, -1] - data.state[var, i, -2]
-                    slopes[var, i, -1] = self.limiter_function(backward_diff, 0.0)
+                    # Top boundary (j=ny-1)
+                    j_bottom = ng + ny - 2
+                    j_center = ng + ny - 1
+                    backward_diff = data.state[var, i_state, j_center] - data.state[var, i_state, j_bottom]
+                    slopes[var, i, ny-1] = self.limiter_function(backward_diff, 0.0)
         
         return slopes
     
