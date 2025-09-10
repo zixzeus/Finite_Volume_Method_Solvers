@@ -135,19 +135,33 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
                     # Apply limiter
                     slopes[var, i, j] = self.limiter_function(left_diff, right_diff)
                 
-                # Boundary cells: use one-sided differences or zero slope
+                # Boundary cells: use one-sided differences with proper limiting
                 if nx > 1:
-                    # Left boundary (i=0)
+                    # Left boundary (i=0): use forward difference but avoid zero limiting
                     i_center = ng
                     i_right = ng + 1
                     forward_diff = data.state[var, i_right, j_state] - data.state[var, i_center, j_state]
-                    slopes[var, 0, j] = self.limiter_function(0.0, forward_diff)
+                    # Use ghost cell if available for better boundary treatment
+                    if ng > 0:
+                        i_left_ghost = ng - 1
+                        backward_diff = data.state[var, i_center, j_state] - data.state[var, i_left_ghost, j_state]
+                        slopes[var, 0, j] = self.limiter_function(backward_diff, forward_diff)
+                    else:
+                        # Fallback: use reduced slope to avoid zero
+                        slopes[var, 0, j] = 0.5 * forward_diff
                     
-                    # Right boundary (i=nx-1)
+                    # Right boundary (i=nx-1): use backward difference but avoid zero limiting
                     i_left = ng + nx - 2
                     i_center = ng + nx - 1
                     backward_diff = data.state[var, i_center, j_state] - data.state[var, i_left, j_state]
-                    slopes[var, nx-1, j] = self.limiter_function(backward_diff, 0.0)
+                    # Use ghost cell if available for better boundary treatment
+                    if ng > 0:
+                        i_right_ghost = ng + nx
+                        forward_diff = data.state[var, i_right_ghost, j_state] - data.state[var, i_center, j_state]
+                        slopes[var, nx-1, j] = self.limiter_function(backward_diff, forward_diff)
+                    else:
+                        # Fallback: use reduced slope to avoid zero
+                        slopes[var, nx-1, j] = 0.5 * backward_diff
         
         return slopes
     
@@ -175,19 +189,33 @@ class SlopeLimiterReconstruction(SecondOrderReconstruction, LimiterMixin):
                     # Apply limiter
                     slopes[var, i, j] = self.limiter_function(left_diff, right_diff)
                 
-                # Boundary cells: use one-sided differences or zero slope
+                # Boundary cells: use one-sided differences with proper limiting
                 if ny > 1:
-                    # Bottom boundary (j=0)
+                    # Bottom boundary (j=0): use forward difference but avoid zero limiting
                     j_center = ng
                     j_top = ng + 1
                     forward_diff = data.state[var, i_state, j_top] - data.state[var, i_state, j_center]
-                    slopes[var, i, 0] = self.limiter_function(0.0, forward_diff)
+                    # Use ghost cell if available for better boundary treatment
+                    if ng > 0:
+                        j_bottom_ghost = ng - 1
+                        backward_diff = data.state[var, i_state, j_center] - data.state[var, i_state, j_bottom_ghost]
+                        slopes[var, i, 0] = self.limiter_function(backward_diff, forward_diff)
+                    else:
+                        # Fallback: use reduced slope to avoid zero
+                        slopes[var, i, 0] = 0.5 * forward_diff
                     
-                    # Top boundary (j=ny-1)
+                    # Top boundary (j=ny-1): use backward difference but avoid zero limiting
                     j_bottom = ng + ny - 2
                     j_center = ng + ny - 1
                     backward_diff = data.state[var, i_state, j_center] - data.state[var, i_state, j_bottom]
-                    slopes[var, i, ny-1] = self.limiter_function(backward_diff, 0.0)
+                    # Use ghost cell if available for better boundary treatment
+                    if ng > 0:
+                        j_top_ghost = ng + ny
+                        forward_diff = data.state[var, i_state, j_top_ghost] - data.state[var, i_state, j_center]
+                        slopes[var, i, ny-1] = self.limiter_function(backward_diff, forward_diff)
+                    else:
+                        # Fallback: use reduced slope to avoid zero
+                        slopes[var, i, ny-1] = 0.5 * backward_diff
         
         return slopes
     
