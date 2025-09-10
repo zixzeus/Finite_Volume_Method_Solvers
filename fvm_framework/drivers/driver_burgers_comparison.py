@@ -248,55 +248,22 @@ class BurgersComparison:
             }
         
         return metrics
-    
-    def compute_vorticity(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
-        """Compute vorticity field ω = ∇ × v"""
-        dx = self.params.domain_size / self.params.nx
-        dy = self.params.domain_size / self.params.ny
-        
-        du_dy = np.gradient(u, dy, axis=1)
-        dv_dx = np.gradient(v, dx, axis=0)
-        vorticity = dv_dx - du_dy
-        
-        return vorticity
-    
-    def plot_comparison(self, test_case: str):
-        """Generate comparison plots for a test case"""
-        plotter = FVMPlotter(self.params)
-        
-        # Compute energy metrics for specialized Burgers plotting
-        energy_metrics = self.compute_energy_dissipation(test_case)
-        
-        # Use specialized Burgers comparison plot
-        plotter.plot_burgers_comparison(
-            test_case=test_case,
-            results=self.results,
-            energy_metrics=energy_metrics
-        )
+
     
     def plot_time_series(self, test_case: str, method_name: str):
         """Generate time series plots for specified output times"""
         plotter = FVMPlotter(self.params)
         physics_config = create_physics_specific_plotter('burgers')
         
-        # Generate both single variable and multi-variable time series
-        # Single variable (u-component) for compatibility
-        plotter.plot_time_series(
+        
+        # Multi-variable time series showing both u and v components
+
+        plotter.plot_multi_variable_time_series(
             test_case=test_case,
             method_name=method_name,
             results=self.results,
-            variable_index=physics_config['primary_variable']['index'],
-            variable_name=physics_config['primary_variable']['name']
+            variables=physics_config['variables']
         )
-        
-        # Multi-variable time series showing both u and v components
-        if 'time_series_variables' in physics_config:
-            plotter.plot_multi_variable_time_series(
-                test_case=test_case,
-                method_name=method_name,
-                results=self.results,
-                variables=physics_config['time_series_variables']
-            )
     
     def print_summary(self):
         """Print summary of all test results"""
@@ -340,7 +307,6 @@ class BurgersComparison:
         
         for test_case in self.params.test_cases:
             self.run_comparison_test(test_case)
-            self.plot_comparison(test_case)
             
             # Generate time series plots for each method
             for method in self.params.spatial_methods:

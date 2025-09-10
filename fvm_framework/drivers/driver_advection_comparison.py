@@ -226,30 +226,16 @@ class AdvectionComparison:
         
         return errors
     
-    def plot_comparison(self, test_case: str):
-        """Generate comparison plots for a test case"""
-        plotter = FVMPlotter(self.params)
-        physics_config = create_physics_specific_plotter('advection')
-        
-        plotter.plot_scalar_comparison(
-            test_case=test_case,
-            results=self.results,
-            variable_index=physics_config['primary_variable']['index'],
-            variable_name=physics_config['primary_variable']['name'],
-            title_suffix=physics_config['title_suffix']
-        )
-    
     def plot_time_series(self, test_case: str, method_name: str):
         """Generate time series plots for specified output times"""
         plotter = FVMPlotter(self.params)
         physics_config = create_physics_specific_plotter('advection')
         
-        plotter.plot_time_series(
+        plotter.plot_multi_variable_time_series(
             test_case=test_case,
             method_name=method_name,
             results=self.results,
-            variable_index=physics_config['primary_variable']['index'],
-            variable_name=physics_config['primary_variable']['name']
+            variables=physics_config['variables']
         )
     
     def print_summary(self):
@@ -301,7 +287,6 @@ class AdvectionComparison:
         
         for test_case in self.params.test_cases:
             self.run_comparison_test(test_case)
-            self.plot_comparison(test_case)
             
             # Generate time series plots for each method
             for method in self.params.spatial_methods:

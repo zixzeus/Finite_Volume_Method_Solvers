@@ -11,12 +11,15 @@ Where [p, u, v] are pressure and velocity components
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import time
-from typing import Dict, List, Tuple, Any
+import sys
+from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from fvm_framework.utils import FVMPlotter, create_physics_specific_plotter
 from fvm_framework.core.solver import FVMSolver
 from fvm_framework.testcases.testsuite_sound_wave_2D import get_sound_wave_test_case, list_sound_wave_test_cases
 
@@ -36,12 +39,13 @@ class SoundWaveComparisonParameters:
     # Simulation parameters
     final_time: float = 0.5
     cfl_number: float = 0.4
+    outputtimes: Optional[List[float]] = None
     
     # Test cases to run
-    test_cases: List[str] = None
+    test_cases: Optional[List[str]] = None
     
     # Spatial methods to compare
-    spatial_methods: List[Dict[str, Any]] = None
+    spatial_methods: Optional[List[Dict[str, Any]]] = None
     
     # Output parameters
     output_dir: str = "comparison_results"
@@ -51,6 +55,10 @@ class SoundWaveComparisonParameters:
     def __post_init__(self):
         if self.test_cases is None:
             self.test_cases = ['gaussian_pulse', 'plane_wave', 'standing_wave', 'circular_wave', 'acoustic_dipole']
+        
+        if self.outputtimes is None:
+            # Create 5 equally spaced time points from 0 to final_time
+            self.outputtimes = [i * self.final_time / 4 for i in range(5)]
         
         if self.spatial_methods is None:
             self.spatial_methods = [
@@ -127,12 +135,13 @@ class SoundWaveComparison:
             },
             'simulation': {
                 'final_time': self.params.final_time,
-                'output_interval': self.params.final_time / 5,
-                'monitor_interval': 100
+                'output_interval': self.params.final_time,
+                'monitor_interval': 100,
+                'outputtimes': self.params.outputtimes
             }
         }
     
-    def run_single_test(self, test_case: str, method: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def run_single_test(self, test_case: str, method: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
         """Run a single test with specified method and test case"""
         print(f"  Running {method['name']} with {test_case}")
         
@@ -149,21 +158,29 @@ class SoundWaveComparison:
             
             # Run simulation with timing
             start_time = time.perf_counter()
+            # Run simulation (solver will automatically collect time series data)
             solver.solve()
             end_time = time.perf_counter()
             
-            # Get final solution
+            # Get final solution and time series data
             solution = solver.get_solution()
+            time_series_data = solver.get_time_series()
             stats = solver.get_statistics()
             
             timing_info = {
                 'total_time': end_time - start_time,
                 'total_steps': solution['time_step'],
-                'avg_time_per_step': (end_time - start_time) / max(solution['time_step'], 1),
-                'pipeline_performance': stats['pipeline_performance']
+                'avg_time_per_step': (end_time - start_time) / max(solution['time_step'], 1)
             }
             
-            return solution, timing_info
+            # Package solution with time series data
+            solution_with_series = {
+                'final_solution': solution,
+                'time_series': time_series_data,
+                'stats': stats
+            }
+            
+            return solution_with_series, timing_info
             
         except Exception as e:
             print(f"    Error in simulation: {e}")
@@ -224,7 +241,10 @@ class SoundWaveComparison:
         initial_v_amplitude = np.max(np.abs(initial_condition[2]))
         
         for method_name, solution in self.results[test_case]['solutions'].items():
-            final_state = solution['conservative']
+            if 'conservative' in solution:
+                final_state = solution['conservative']
+            else:
+                final_state = solution['final_solution']['conservative']
             
             # Final metrics
             final_energy = self.compute_acoustic_energy(final_state)
@@ -257,7 +277,7 @@ class SoundWaveComparison:
         # This is a simplified phase velocity check
         # For more accurate analysis, would need to track wave fronts
         
-        for method_name, solution in self.results[test_case]['solutions'].items():
+        for method_name, solution_data in self.results[test_case]['solutions'].items():
             # Placeholder for phase velocity error calculation
             # In practice, this would involve FFT analysis or wave front tracking
             errors[method_name] = 0.0  # Simplified for now
@@ -266,132 +286,29 @@ class SoundWaveComparison:
     
     def plot_comparison(self, test_case: str):
         """Generate comparison plots for a test case"""
-        if test_case not in self.results:
-            print(f"No results found for test case: {test_case}")
-            return
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('sound_wave')
         
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle(f'Sound Wave Equation Comparison: {test_case}', fontsize=16)
+        # Use common multi-variable comparison plotting
+        plotter.plot_multi_variable_comparison(
+            test_case=test_case,
+            results=self.results,
+            variables=physics_config['variables'],
+            title_suffix=physics_config['title_suffix']
+        )
+    
+    def plot_time_series(self, test_case: str, method_name: str):
+        """Generate time series plots for specified output times"""
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('sound_wave')
         
-        # Create coordinate arrays
-        x = np.linspace(0, self.params.domain_size, self.params.nx)
-        y = np.linspace(0, self.params.domain_size, self.params.ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        
-        # Plot initial conditions
-        initial_state = self.results[test_case]['initial_condition']
-        
-        # Pressure field
-        im0 = axes[0,0].contourf(X, Y, initial_state[0], levels=20, cmap='RdBu_r')
-        axes[0,0].set_title('Initial Pressure')
-        axes[0,0].set_xlabel('x')
-        axes[0,0].set_ylabel('y')
-        plt.colorbar(im0, ax=axes[0,0])
-        
-        # Velocity magnitude
-        velocity_mag_initial = np.sqrt(initial_state[1]**2 + initial_state[2]**2)
-        im1 = axes[0,1].contourf(X, Y, velocity_mag_initial, levels=20, cmap='viridis')
-        axes[0,1].set_title('Initial Velocity Magnitude')
-        axes[0,1].set_xlabel('x')
-        axes[0,1].set_ylabel('y')
-        plt.colorbar(im1, ax=axes[0,1])
-        
-        # Cross-section comparisons
-        y_mid_idx = self.params.ny // 2
-        
-        # Pressure cross-section
-        axes[0,2].plot(x, initial_state[0, :, y_mid_idx], 'k-', linewidth=2, label='Initial')
-        
-        for method in self.params.spatial_methods:
-            method_name = method['name']
-            if method_name in self.results[test_case]['solutions']:
-                solution = self.results[test_case]['solutions'][method_name]
-                final_state = solution['conservative']
-                
-                axes[0,2].plot(x, final_state[0, :, y_mid_idx], 
-                             color=method['color'], 
-                             linestyle=method['linestyle'],
-                             linewidth=1.5,
-                             label=method_name)
-        
-        axes[0,2].set_title(f'Pressure Cross-section (y = {self.params.domain_size/2:.1f})')
-        axes[0,2].set_xlabel('x')
-        axes[0,2].set_ylabel('p')
-        axes[0,2].legend()
-        axes[0,2].grid(True, alpha=0.3)
-        
-        # u-velocity cross-section
-        axes[1,0].plot(x, initial_state[1, :, y_mid_idx], 'k-', linewidth=2, label='Initial')
-        
-        for method in self.params.spatial_methods:
-            method_name = method['name']
-            if method_name in self.results[test_case]['solutions']:
-                solution = self.results[test_case]['solutions'][method_name]
-                final_state = solution['conservative']
-                
-                axes[1,0].plot(x, final_state[1, :, y_mid_idx], 
-                             color=method['color'], 
-                             linestyle=method['linestyle'],
-                             linewidth=1.5,
-                             label=method_name)
-        
-        axes[1,0].set_title(f'u-velocity Cross-section (y = {self.params.domain_size/2:.1f})')
-        axes[1,0].set_xlabel('x')
-        axes[1,0].set_ylabel('u')
-        axes[1,0].legend()
-        axes[1,0].grid(True, alpha=0.3)
-        
-        # Amplitude loss comparison
-        amplitude_metrics = self.compute_wave_amplitude(test_case)
-        if amplitude_metrics:
-            method_names = list(amplitude_metrics.keys())
-            total_losses = [amplitude_metrics[name]['total_amplitude_loss'] for name in method_names]
-            
-            bars = axes[1,1].bar(range(len(method_names)), total_losses)
-            axes[1,1].set_title('Total Amplitude Loss')
-            axes[1,1].set_xlabel('Method')
-            axes[1,1].set_ylabel('Relative Amplitude Loss')
-            axes[1,1].set_xticks(range(len(method_names)))
-            axes[1,1].set_xticklabels(method_names, rotation=45, ha='right')
-            axes[1,1].grid(True, alpha=0.3)
-            
-            # Color bars according to method colors
-            for i, bar in enumerate(bars):
-                if i < len(self.params.spatial_methods):
-                    bar.set_color(self.params.spatial_methods[i]['color'])
-        
-        # Timing comparison
-        timings = self.results[test_case]['timings']
-        if timings:
-            method_names = list(timings.keys())
-            compute_times = [timings[name]['total_time'] for name in method_names 
-                           if 'error' not in timings[name]]
-            
-            if compute_times:
-                bars = axes[1,2].bar(range(len(method_names)), compute_times)
-                axes[1,2].set_title('Computation Time Comparison')
-                axes[1,2].set_xlabel('Method')
-                axes[1,2].set_ylabel('Time (seconds)')
-                axes[1,2].set_xticks(range(len(method_names)))
-                axes[1,2].set_xticklabels(method_names, rotation=45, ha='right')
-                axes[1,2].grid(True, alpha=0.3)
-                
-                # Color bars
-                for i, bar in enumerate(bars):
-                    if i < len(self.params.spatial_methods):
-                        bar.set_color(self.params.spatial_methods[i]['color'])
-        
-        plt.tight_layout()
-        
-        if self.params.save_plots:
-            filename = os.path.join(self.params.output_dir, f'sound_wave_comparison_{test_case}.png')
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-            print(f"  Saved plot: {filename}")
-        
-        if self.params.show_plots:
-            plt.show()
-        else:
-            plt.close()
+        # Multi-variable time series showing all 3 sound wave variables
+        plotter.plot_multi_variable_time_series(
+            test_case=test_case,
+            method_name=method_name,
+            results=self.results,
+            variables=physics_config['variables']
+        )
     
     def print_summary(self):
         """Print summary of all test results"""
@@ -431,12 +348,23 @@ class SoundWaveComparison:
         print("Starting Sound Wave Equation Comparison Tests")
         print(f"Grid: {self.params.nx} × {self.params.ny}")
         print(f"Sound speed: {self.params.sound_speed}")
+        
+        if self.params.spatial_methods is None or self.params.test_cases is None:
+            print("Error: Missing spatial methods or test cases configuration")
+            return
+        
         print(f"Methods: {len(self.params.spatial_methods)}")
         print(f"Test cases: {len(self.params.test_cases)}")
         
         for test_case in self.params.test_cases:
             self.run_comparison_test(test_case)
             self.plot_comparison(test_case)
+            
+            # Generate time series plots for each method
+            for method in self.params.spatial_methods:
+                method_name = method['name']
+                if test_case in self.results and method_name in self.results[test_case]['solutions']:
+                    self.plot_time_series(test_case, method_name)
         
         self.print_summary()
 
@@ -451,6 +379,7 @@ def main():
         cfl_number=0.4,
         sound_speed=1.0,
         test_cases=['gaussian_pulse', 'plane_wave', 'standing_wave'],
+        outputtimes=[0.0, 0.075, 0.15, 0.225, 0.3],  # 5 equally spaced points from 0 to final_time
         save_plots=True,
         show_plots=False
     )

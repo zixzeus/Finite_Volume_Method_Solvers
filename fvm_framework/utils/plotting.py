@@ -33,71 +33,6 @@ class FVMPlotter:
         self.x = np.linspace(0, self.params.domain_size, self.params.nx)
         self.y = np.linspace(0, self.params.domain_size, self.params.ny)
         self.X, self.Y = np.meshgrid(self.x, self.y, indexing='ij')
-        
-    def plot_scalar_comparison(self, 
-                              test_case: str,
-                              results: Dict,
-                              variable_index: int = 0,
-                              variable_name: str = "Variable",
-                              title_suffix: str = "") -> None:
-        """
-        Create comparison plot for a scalar variable
-        
-        Args:
-            test_case: Name of the test case
-            results: Dictionary containing simulation results
-            variable_index: Index of variable to plot from conservative state
-            variable_name: Name of variable for labeling
-            title_suffix: Additional text for plot title
-        """
-        if test_case not in results:
-            print(f"No results found for test case: {test_case}")
-            return
-            
-        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-        title = f'{title_suffix} Comparison: {test_case}' if title_suffix else f'Comparison: {test_case}'
-        fig.suptitle(title, fontsize=16)
-        
-        # Plot initial condition
-        initial_state = results[test_case]['initial_condition'][variable_index]
-        
-        # Initial condition contour with equal aspect ratio
-        im0 = axes[0].contourf(self.X, self.Y, initial_state, levels=20, cmap='viridis')
-        axes[0].set_title('Initial Condition')
-        axes[0].set_xlabel('x')
-        axes[0].set_ylabel('y')
-        axes[0].set_xlim(0, self.params.domain_size)
-        axes[0].set_ylim(0, self.params.domain_size)
-        axes[0].set_aspect('equal', adjustable='box')
-        plt.colorbar(im0, ax=axes[0])
-        
-        # Cross-section comparison at y = domain_size/2
-        y_mid_idx = self.params.ny // 2
-        axes[1].plot(self.x, initial_state[:, y_mid_idx], 'k-', linewidth=2, label='Initial')
-        
-        # Plot all methods
-        for method in self.params.spatial_methods:
-            method_name = method['name']
-            if method_name in results[test_case]['solutions']:
-                solution = results[test_case]['solutions'][method_name]
-                final_state = solution['final_solution']['conservative'][variable_index]
-                
-                # Cross-section
-                axes[1].plot(self.x, final_state[:, y_mid_idx], 
-                           color=method['color'], 
-                           linestyle=method['linestyle'],
-                           linewidth=1.5,
-                           label=method_name)
-        
-        axes[1].set_title(f'Cross-section at y = {self.params.domain_size/2:.1f}')
-        axes[1].set_xlabel('x')
-        axes[1].set_ylabel(variable_name)
-        axes[1].set_xlim(0, self.params.domain_size)
-        axes[1].legend()
-        axes[1].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        self._save_and_show_plot(f'{test_case}_{variable_name.lower()}_comparison')
 
     def plot_multi_variable_comparison(self, 
                                      test_case: str,
@@ -330,7 +265,8 @@ class FVMPlotter:
                                             label=f'x = {x_coords[mid_x]:.2f}', linewidth=1.5)
                     
                     # Set consistent y-axis limits for cross-sections
-                    axes[cross_row, col].set_ylim(vmin, vmax)
+                    if vmin is not None and vmax is not None and abs(vmax - vmin) > 1e-15:
+                        axes[cross_row, col].set_ylim(vmin, vmax)
                     axes[cross_row, col].set_xlim(0, self.params.domain_size)
                     
                     # Title for cross-section plot
@@ -360,287 +296,7 @@ class FVMPlotter:
         
         plt.tight_layout()
         self._save_and_show_plot(f'{test_case}_{method_name}_multi_variable_time_series')
-
-    def plot_time_series(self, 
-                        test_case: str,
-                        method_name: str,
-                        results: Dict,
-                        variable_index: int = 0,
-                        variable_name: str = "Variable") -> None:
-        """
-        Generate time series evolution plots
-        
-        Args:
-            test_case: Name of the test case
-            method_name: Name of the numerical method
-            results: Dictionary containing simulation results
-            variable_index: Index of variable to plot
-            variable_name: Name of variable for labeling
-        """
-        if test_case not in results:
-            print(f"No results found for test case: {test_case}")
-            return
-            
-        if method_name not in results[test_case]['solutions']:
-            print(f"No solution found for method: {method_name}")
-            return
-            
-        solution_data = results[test_case]['solutions'][method_name]
-        time_series = solution_data.get('time_series')
-        
-        if time_series is None:
-            print(f"No time series data available for {method_name}")
-            return
-            
-        # Check if output times are specified
-        if self.params.outputtimes is None:
-            print("No output times specified")
-            return
-            
-        n_times = len(self.params.outputtimes)
-        cols = min(5, n_times)  # Maximum 5 columns per row
-        rows = 2 if n_times <= 5 else 3  # Add extra row for cross-sections if needed
-        
-        # Create figure with contour plots and cross-sections
-        fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3*rows))
-        fig.suptitle(f'{variable_name} Evolution: {test_case} ({method_name})', fontsize=14)
-        
-        # Handle single column case
-        if cols == 1:
-            axes = axes.reshape(-1, 1)
-        elif n_times == 1:
-            axes = axes.reshape(rows, 1)
-            
-        # Handle both time series data formats:
-        # Format 1: {'times': [t1, t2, ...], 'states': [data1, data2, ...]}
-        # Format 2: {t1: data1, t2: data2, ...}
-        
-        if 'times' in time_series and 'states' in time_series:
-            # Old format: extract times and states
-            times = time_series['times']
-            states = time_series['states']
-            time_data_pairs = list(zip(times, states))
-        else:
-            # New format: direct time->data mapping
-            time_data_pairs = [(t, data) for t, data in time_series.items()]
-            
-        # Find global min/max for consistent color scaling
-        all_data = []
-        for t_idx, output_time in enumerate(self.params.outputtimes):
-            # Find closest time in available data
-            closest_data = None
-            min_time_diff = float('inf')
-            
-            for time_val, data in time_data_pairs:
-                time_diff = abs(time_val - output_time)
-                if time_diff < min_time_diff:
-                    min_time_diff = time_diff
-                    closest_data = data
-                    
-            if closest_data is not None:
-                if len(closest_data.shape) > 2:  # Multi-variable data
-                    var_data = closest_data[variable_index]
-                else:  # Single variable data
-                    var_data = closest_data
-                all_data.append(var_data)
-        
-        if all_data:
-            vmin = np.min([np.min(data) for data in all_data])
-            vmax = np.max([np.max(data) for data in all_data])
-        else:
-            vmin, vmax = None, None
-            
-        # Plot time snapshots
-        y_mid_idx = self.params.ny // 2
-        
-        for t_idx, output_time in enumerate(self.params.outputtimes[:cols]):
-            col = t_idx % cols
-            
-            # Find closest time in available data
-            closest_data = None
-            closest_time = None
-            min_time_diff = float('inf')
-            
-            for time_val, data in time_data_pairs:
-                time_diff = abs(time_val - output_time)
-                if time_diff < min_time_diff:
-                    min_time_diff = time_diff
-                    closest_data = data
-                    closest_time = time_val
-                    
-            if closest_data is not None:
-                # Extract variable data
-                if len(closest_data.shape) > 2:  # Multi-variable: shape (n_vars, nx, ny)
-                    plot_data = closest_data[variable_index]
-                else:  # Single variable: shape (nx, ny)
-                    plot_data = closest_data
-                
-                # Contour plot
-                im = axes[0, col].contourf(self.X, self.Y, plot_data, levels=20, 
-                                         cmap='viridis', vmin=vmin, vmax=vmax)
-                axes[0, col].set_title(f't = {closest_time:.3f}')
-                axes[0, col].set_xlabel('x')
-                axes[0, col].set_ylabel('y')
-                axes[0, col].set_xlim(0, self.params.domain_size)
-                axes[0, col].set_ylim(0, self.params.domain_size)
-                axes[0, col].set_aspect('equal', adjustable='box')
-                plt.colorbar(im, ax=axes[0, col])
-                
-                # Cross-section plot
-                if rows >= 2:
-                    axes[1, col].plot(self.x, plot_data[:, y_mid_idx], 'b-', linewidth=2)
-                    axes[1, col].set_title(f'Cross-section at t = {closest_time:.3f}')
-                    axes[1, col].set_xlabel('x')
-                    axes[1, col].set_ylabel(variable_name)
-                    axes[1, col].set_xlim(0, self.params.domain_size)
-                    axes[1, col].set_ylim(vmin, vmax)
-                    axes[1, col].grid(True, alpha=0.3)
-            else:
-                # Hide unused subplots
-                axes[0, col].set_visible(False)
-                if rows >= 2:
-                    axes[1, col].set_visible(False)
-        
-        plt.tight_layout()
-        self._save_and_show_plot(f'{test_case}_{method_name}_{variable_name.lower()}_time_series')
-
-    def plot_burgers_comparison(self, 
-                                   test_case: str,
-                                   results: Dict,
-                                   energy_metrics = None) -> None:
-        """
-        Create specialized comparison plot for Burgers equations
-        
-        Args:
-            test_case: Name of the test case
-            results: Dictionary containing simulation results
-            energy_metrics: Dictionary of energy dissipation metrics
-        """
-        if test_case not in results:
-            print(f"No results found for test case: {test_case}")
-            return
-            
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle(f'Burgers Equation Comparison: {test_case}', fontsize=16)
-        
-        # Get initial condition
-        initial_state = results[test_case]['initial_condition']
-        u_initial, v_initial = initial_state[0], initial_state[1]
-        
-        # Plot initial u-velocity
-        im0 = axes[0,0].contourf(self.X, self.Y, u_initial, levels=20, cmap='RdBu_r')
-        axes[0,0].set_title('Initial u-velocity')
-        axes[0,0].set_xlabel('x')
-        axes[0,0].set_ylabel('y')
-        axes[0,0].set_aspect('equal', adjustable='box')
-        plt.colorbar(im0, ax=axes[0,0])
-        
-        # Plot initial vorticity
-        vorticity_initial = self._compute_vorticity(u_initial, v_initial)
-        im1 = axes[0,1].contourf(self.X, self.Y, vorticity_initial, levels=20, cmap='RdBu_r')
-        axes[0,1].set_title('Initial Vorticity')
-        axes[0,1].set_xlabel('x')
-        axes[0,1].set_ylabel('y')
-        axes[0,1].set_aspect('equal', adjustable='box')
-        plt.colorbar(im1, ax=axes[0,1])
-        
-        # u-velocity cross-section comparison
-        y_mid_idx = self.params.ny // 2
-        axes[0,2].plot(self.x, u_initial[:, y_mid_idx], 'k-', linewidth=2, label='Initial')
-        
-        # Plot all methods - u velocity
-        for method in self.params.spatial_methods:
-            method_name = method['name']
-            if method_name in results[test_case]['solutions']:
-                solution = results[test_case]['solutions'][method_name]
-                if 'conservative' in solution:
-                    final_state = solution['conservative']
-                else:
-                    final_state = solution['final_solution']['conservative']
-                u_final = final_state[0]
-                
-                axes[0,2].plot(self.x, u_final[:, y_mid_idx], 
-                             color=method['color'], 
-                             linestyle=method['linestyle'],
-                             linewidth=1.5,
-                             label=method_name)
-        
-        axes[0,2].set_title(f'u-velocity Cross-section (y = {self.params.domain_size/2:.1f})')
-        axes[0,2].set_xlabel('x')
-        axes[0,2].set_ylabel('u')
-        axes[0,2].set_xlim(0, self.params.domain_size)
-        axes[0,2].legend()
-        axes[0,2].grid(True, alpha=0.3)
-        
-        # Energy dissipation comparison
-        if energy_metrics:
-            method_names = list(energy_metrics.keys())
-            energy_dissipation = [energy_metrics[name]['energy_dissipation'] for name in method_names]
-            
-            bars = axes[1,0].bar(range(len(method_names)), energy_dissipation)
-            axes[1,0].set_title('Energy Dissipation')
-            axes[1,0].set_xlabel('Method')
-            axes[1,0].set_ylabel('Relative Energy Loss')
-            axes[1,0].set_xticks(range(len(method_names)))
-            axes[1,0].set_xticklabels(method_names, rotation=45, ha='right')
-            axes[1,0].grid(True, alpha=0.3)
-            
-            # Color bars according to method colors
-            for i, bar in enumerate(bars):
-                if i < len(self.params.spatial_methods):
-                    bar.set_color(self.params.spatial_methods[i]['color'])
-        
-        # Enstrophy dissipation comparison  
-        if energy_metrics:
-            enstrophy_dissipation = [energy_metrics[name]['enstrophy_dissipation'] for name in method_names]
-            
-            bars = axes[1,1].bar(range(len(method_names)), enstrophy_dissipation)
-            axes[1,1].set_title('Enstrophy Dissipation')
-            axes[1,1].set_xlabel('Method')
-            axes[1,1].set_ylabel('Relative Enstrophy Loss')
-            axes[1,1].set_xticks(range(len(method_names)))
-            axes[1,1].set_xticklabels(method_names, rotation=45, ha='right')
-            axes[1,1].grid(True, alpha=0.3)
-            
-            # Color bars
-            for i, bar in enumerate(bars):
-                if i < len(self.params.spatial_methods):
-                    bar.set_color(self.params.spatial_methods[i]['color'])
-        
-        # Timing comparison
-        timings = results[test_case].get('timings', {})
-        if timings:
-            timing_method_names = list(timings.keys())
-            compute_times = [timings[name]['total_time'] for name in timing_method_names 
-                           if 'error' not in timings[name]]
-            
-            if compute_times:
-                bars = axes[1,2].bar(range(len(timing_method_names)), compute_times)
-                axes[1,2].set_title('Computation Time Comparison')
-                axes[1,2].set_xlabel('Method')
-                axes[1,2].set_ylabel('Time (seconds)')
-                axes[1,2].set_xticks(range(len(timing_method_names)))
-                axes[1,2].set_xticklabels(timing_method_names, rotation=45, ha='right')
-                axes[1,2].grid(True, alpha=0.3)
-                
-                # Color bars
-                for i, bar in enumerate(bars):
-                    if i < len(self.params.spatial_methods):
-                        bar.set_color(self.params.spatial_methods[i]['color'])
-        
-        plt.tight_layout()
-        self._save_and_show_plot(f'{test_case}_burgers_comparison')
     
-    def _compute_vorticity(self, u: np.ndarray, v: np.ndarray) -> np.ndarray:
-        """Compute vorticity field ω = ∇ × v"""
-        dx = self.params.domain_size / self.params.nx
-        dy = self.params.domain_size / self.params.ny
-        
-        du_dy = np.gradient(u, dy, axis=1)
-        dv_dx = np.gradient(v, dx, axis=0)
-        
-        return dv_dx - du_dy
-
     def plot_conservation_errors(self, 
                                 conservation_errors: Dict,
                                 test_case: str,
@@ -711,31 +367,21 @@ def create_physics_specific_plotter(physics_type: str) -> Dict[str, Any]:
     """
     configs = {
         'advection': {
-            'primary_variable': {'index': 0, 'name': 'u', 'units': ''},
+            'variables': [{'index': 0, 'name': 'u', 'units': ''}],
             'title_suffix': 'Advection Equation'
         },
         
         'burgers': {
-            'variables': [
-                {'index': 0, 'name': 'u-velocity', 'units': 'm/s'},
-                {'index': 1, 'name': 'v-velocity', 'units': 'm/s'}
-            ],
-            'time_series_variables': [  # Variables for multi-variable time series
+            'variables': [  # Variables for multi-variable time series
                 {'index': 0, 'name': 'u', 'units': 'm/s'},
                 {'index': 1, 'name': 'v', 'units': 'm/s'}
             ],
-            'primary_variable': {'index': 0, 'name': 'u', 'units': 'm/s'},
             'title_suffix': 'Burgers Equation',
             'special_metrics': ['energy_dissipation', 'enstrophy_dissipation']
         },
         
         'euler': {
-            'variables': [
-                {'index': 0, 'name': 'Density', 'units': 'kg/m³'},
-                {'index': 1, 'name': 'X-Momentum', 'units': 'kg/(m²·s)'},
-                {'index': 4, 'name': 'Energy', 'units': 'J/m³'}
-            ],
-            'time_series_variables': [  # All 5 Euler variables
+            'variables': [  # All 5 Euler variables
                 {'index': 0, 'name': 'ρ', 'units': 'kg/m³'},
                 {'index': 1, 'name': 'ρu', 'units': 'kg/(m²·s)'},
                 {'index': 2, 'name': 'ρv', 'units': 'kg/(m²·s)'},
@@ -748,11 +394,6 @@ def create_physics_specific_plotter(physics_type: str) -> Dict[str, Any]:
         
         'sound_wave': {
             'variables': [
-                {'index': 0, 'name': 'Pressure', 'units': 'Pa'},
-                {'index': 1, 'name': 'X-Velocity', 'units': 'm/s'},
-                {'index': 2, 'name': 'Y-Velocity', 'units': 'm/s'}
-            ],
-            'time_series_variables': [
                 {'index': 0, 'name': 'p', 'units': 'Pa'},
                 {'index': 1, 'name': 'u', 'units': 'm/s'},
                 {'index': 2, 'name': 'v', 'units': 'm/s'}
@@ -761,13 +402,7 @@ def create_physics_specific_plotter(physics_type: str) -> Dict[str, Any]:
         },
         
         'mhd': {
-            'variables': [
-                {'index': 0, 'name': 'Density', 'units': 'kg/m³'},
-                {'index': 4, 'name': 'Energy', 'units': 'J/m³'},
-                {'index': 5, 'name': 'Bx', 'units': 'T'},
-                {'index': 6, 'name': 'By', 'units': 'T'}
-            ],
-            'time_series_variables': [  # All 8 MHD variables
+            'variables': [  # All 8 MHD variables
                 {'index': 0, 'name': 'ρ', 'units': 'kg/m³'},
                 {'index': 1, 'name': 'ρu', 'units': 'kg/(m²·s)'},
                 {'index': 2, 'name': 'ρv', 'units': 'kg/(m²·s)'},
