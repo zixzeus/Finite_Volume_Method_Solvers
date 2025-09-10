@@ -8,7 +8,7 @@ Physics: ∂u/∂t + a∂u/∂x + b∂u/∂y = 0
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+from fvm_framework.utils import FVMPlotter, create_physics_specific_plotter
 import os
 import time
 from typing import Dict, List, Tuple, Any, Optional, Union
@@ -229,237 +229,29 @@ class AdvectionComparison:
     
     def plot_comparison(self, test_case: str):
         """Generate comparison plots for a test case"""
-        if test_case not in self.results:
-            print(f"No results found for test case: {test_case}")
-            return
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('advection')
         
-        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-        fig.suptitle(f'Advection Equation Comparison: {test_case}', fontsize=16)
-        
-        # Plot initial condition
-        initial_state = self.results[test_case]['initial_condition'][0]  # [u] for advection
-        x = np.linspace(0, self.params.domain_size, self.params.nx)
-        y = np.linspace(0, self.params.domain_size, self.params.ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        
-        # Initial condition contour - make it square with equal aspect ratio
-        im0 = axes[0].contourf(X, Y, initial_state, levels=20, cmap='viridis')
-        axes[0].set_title('Initial Condition')
-        axes[0].set_xlabel('x')
-        axes[0].set_ylabel('y')
-        axes[0].set_xlim(0, self.params.domain_size)
-        axes[0].set_ylim(0, self.params.domain_size)
-        axes[0].set_aspect('equal', adjustable='box')
-        plt.colorbar(im0, ax=axes[0])
-        
-        # Cross-section comparison at y = domain_size/2
-        y_mid_idx = self.params.ny // 2
-        axes[1].plot(x, initial_state[:, y_mid_idx], 'k-', linewidth=2, label='Initial')
-        
-        # Plot all methods
-        for method in self.params.spatial_methods:
-            method_name = method['name']
-            if method_name in self.results[test_case]['solutions']:
-                solution = self.results[test_case]['solutions'][method_name]
-                final_state = solution['final_solution']['conservative'][0]  # [u] for advection
-                
-                # Cross-section
-                axes[1].plot(x, final_state[:, y_mid_idx], 
-                             color=method['color'], 
-                             linestyle=method['linestyle'],
-                             linewidth=1.5,
-                             label=method_name)
-        
-        axes[1].set_title(f'Cross-section at y = {self.params.domain_size/2:.1f}')
-        axes[1].set_xlabel('x')
-        axes[1].set_ylabel('u')
-        axes[1].set_xlim(0, self.params.domain_size)
-        axes[1].legend()
-        axes[1].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        
-        if self.params.save_plots:
-            filename = os.path.join(self.params.output_dir, f'advection_comparison_{test_case}.png')
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-            print(f"  Saved plot: {filename}")
-        
-        if self.params.show_plots:
-            plt.show()
-        else:
-            plt.close()
+        plotter.plot_scalar_comparison(
+            test_case=test_case,
+            results=self.results,
+            variable_index=physics_config['primary_variable']['index'],
+            variable_name=physics_config['primary_variable']['name'],
+            title_suffix=physics_config['title_suffix']
+        )
     
     def plot_time_series(self, test_case: str, method_name: str):
         """Generate time series plots for specified output times"""
-        if test_case not in self.results:
-            print(f"No results found for test case: {test_case}")
-            return
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('advection')
         
-        if method_name not in self.results[test_case]['solutions']:
-            print(f"No solution found for method: {method_name}")
-            return
-        
-        solution_data = self.results[test_case]['solutions'][method_name]
-        time_series = solution_data.get('time_series')
-        
-        if time_series is None:
-            print(f"No time series data available for {method_name}")
-            return
-        
-        # Setup grid for plotting
-        x = np.linspace(0, self.params.domain_size, self.params.nx)
-        y = np.linspace(0, self.params.domain_size, self.params.ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        
-        # Determine number of subplots based on outputtimes
-        if self.params.outputtimes is None:
-            print("No output times specified")
-            return
-            
-        n_times = len(self.params.outputtimes)
-        cols = min(5, n_times)  # Maximum 5 columns per row
-        
-        # Create figure with 2 rows: top for contour plots, bottom for cross-sections
-        fig, axes = plt.subplots(2, cols, figsize=(4*cols, 8))
-        if cols == 1:
-            # If only one column, axes is (2,) array
-            contour_axes = [axes[0]]
-            cross_axes = [axes[1]]
-        else:
-            # If multiple columns, axes is (2, cols) array
-            contour_axes = axes[0]  # Top row for contour plots
-            cross_axes = axes[1]    # Bottom row for cross-sections
-        
-        fig.suptitle(f'{test_case} - {method_name} - Time Evolution', fontsize=16)
-        
-        # Find time series data closest to each output time
-        y_mid_idx = self.params.ny // 2  # Middle y-index for cross-section
-        
-        # First pass: collect all cross-section data to determine consistent y-axis range
-        cross_section_data = []
-        y_min, y_max = float('inf'), float('-inf')
-        
-        for i, target_time in enumerate(self.params.outputtimes):
-            if i < cols:
-                if 'times' in time_series and 'states' in time_series:
-                    times = time_series['times']
-                    states = time_series['states']
-                    time_idx = np.argmin(np.abs(np.array(times) - target_time))
-                    state = states[time_idx][0]
-                    cross_data = state[:, y_mid_idx]
-                else:
-                    if target_time == 0.0:
-                        state = self.results[test_case]['initial_condition'][0]
-                    else:
-                        state = solution_data['final_solution']['conservative'][0]
-                    cross_data = state[:, y_mid_idx]
-                
-                cross_section_data.append(cross_data)
-                y_min = min(y_min, cross_data.min())
-                y_max = max(y_max, cross_data.max())
-        
-        # Add small margin to y-axis range
-        y_range = y_max - y_min
-        if y_range > 0:
-            y_min -= 0.05 * y_range
-            y_max += 0.05 * y_range
-        else:
-            y_min -= 0.1
-            y_max += 0.1
-        
-        # Second pass: create plots with consistent y-axis scaling
-        for i, target_time in enumerate(self.params.outputtimes):
-            if i < cols:  # Only plot for available columns
-                # Find closest time in time series
-                if 'times' in time_series and 'states' in time_series:
-                    times = time_series['times']
-                    states = time_series['states']
-                    
-                    # Find closest time index
-                    time_idx = np.argmin(np.abs(np.array(times) - target_time))
-                    actual_time = times[time_idx]
-                    state = states[time_idx][0]  # [u] for advection
-                    
-                    # Top row: Create contour plot
-                    if cols == 1:
-                        contour_ax = contour_axes[0]
-                        cross_ax = cross_axes[0]
-                    else:
-                        contour_ax = contour_axes[i]
-                        cross_ax = cross_axes[i]
-                    
-                    im = contour_ax.contourf(X, Y, state, levels=20, cmap='viridis')
-                    contour_ax.set_title(f't = {actual_time:.3f}')
-                    contour_ax.set_xlabel('x')
-                    contour_ax.set_ylabel('y')
-                    contour_ax.set_xlim(0, self.params.domain_size)
-                    contour_ax.set_ylim(0, self.params.domain_size)
-                    contour_ax.set_aspect('equal', adjustable='box')
-                    plt.colorbar(im, ax=contour_ax)
-                    
-                    # Bottom row: Cross-section plot
-                    cross_ax.plot(x, cross_section_data[i], 'b-', linewidth=2)
-                    cross_ax.set_title(f'Cross-section at y = {self.params.domain_size/2:.1f}')
-                    cross_ax.set_xlabel('x')
-                    cross_ax.set_ylabel('u')
-                    cross_ax.set_xlim(0, self.params.domain_size)
-                    cross_ax.set_ylim(y_min, y_max)  # Use consistent y-axis scaling
-                    cross_ax.grid(True, alpha=0.3)
-                    
-                else:
-                    # Fallback: use initial condition for t=0, final for others
-                    if cols == 1:
-                        contour_ax = contour_axes[0]
-                        cross_ax = cross_axes[0]
-                    else:
-                        contour_ax = contour_axes[i]
-                        cross_ax = cross_axes[i]
-                    
-                    if target_time == 0.0:
-                        state = self.results[test_case]['initial_condition'][0]
-                        contour_ax.contourf(X, Y, state, levels=20, cmap='viridis')
-                        contour_ax.set_title(f't = 0.000 (Initial)')
-                        cross_ax.plot(x, state[:, y_mid_idx], 'b-', linewidth=2)
-                    else:
-                        state = solution_data['final_solution']['conservative'][0]
-                        contour_ax.contourf(X, Y, state, levels=20, cmap='viridis')
-                        contour_ax.set_title(f't = {self.params.final_time:.3f} (Final)')
-                        cross_ax.plot(x, state[:, y_mid_idx], 'b-', linewidth=2)
-                    
-                    contour_ax.set_xlabel('x')
-                    contour_ax.set_ylabel('y')
-                    contour_ax.set_xlim(0, self.params.domain_size)
-                    contour_ax.set_ylim(0, self.params.domain_size)
-                    contour_ax.set_aspect('equal', adjustable='box')
-                    
-                    cross_ax.set_title(f'Cross-section at y = {self.params.domain_size/2:.1f}')
-                    cross_ax.set_xlabel('x')
-                    cross_ax.set_ylabel('u')
-                    cross_ax.set_xlim(0, self.params.domain_size)
-                    cross_ax.grid(True, alpha=0.3)
-        
-        # Hide unused subplots
-        for i in range(n_times, cols):
-            if cols == 1:
-                if n_times == 0:
-                    contour_axes[0].set_visible(False)
-                    cross_axes[0].set_visible(False)
-            else:
-                contour_axes[i].set_visible(False)
-                cross_axes[i].set_visible(False)
-        
-        plt.tight_layout()
-        
-        if self.params.save_plots:
-            filename = os.path.join(self.params.output_dir, 
-                                   f'{test_case}_{method_name.replace(" ", "_").replace("(", "").replace(")", "").lower()}_time_series.png')
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-            print(f"  Saved time series plot: {filename}")
-        
-        if self.params.show_plots:
-            plt.show()
-        else:
-            plt.close()
+        plotter.plot_time_series(
+            test_case=test_case,
+            method_name=method_name,
+            results=self.results,
+            variable_index=physics_config['primary_variable']['index'],
+            variable_name=physics_config['primary_variable']['name']
+        )
     
     def print_summary(self):
         """Print summary of all test results"""

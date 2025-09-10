@@ -10,6 +10,7 @@ Where U = [ρ, ρu, ρv, ρw, E]
 
 import numpy as np
 import matplotlib.pyplot as plt
+from fvm_framework.utils import FVMPlotter, create_physics_specific_plotter
 import os
 import time
 from typing import Dict, List, Tuple, Any
@@ -267,9 +268,24 @@ class EulerComparison:
     
     def plot_comparison(self, test_case: str):
         """Generate comparison plots for a test case"""
-        if test_case not in self.results:
-            print(f"No results found for test case: {test_case}")
-            return
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('euler')
+        
+        plotter.plot_multi_variable_comparison(
+            test_case=test_case,
+            results=self.results,
+            variables=physics_config['variables'],
+            title_suffix=physics_config['title_suffix']
+        )
+        
+        # Also generate conservation error plot if available
+        conservation_errors = self.compute_conservation_errors(test_case) 
+        if conservation_errors:
+            plotter.plot_conservation_errors(
+                conservation_errors=conservation_errors,
+                test_case=test_case,
+                error_types=physics_config['conservation_errors']
+            )
         
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
         fig.suptitle(f'Euler Equation Comparison: {test_case}', fontsize=16)
