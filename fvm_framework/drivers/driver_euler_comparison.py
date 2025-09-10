@@ -410,6 +410,30 @@ class EulerComparison:
                     if i < len(self.params.spatial_methods):
                         bar.set_color(self.params.spatial_methods[i]['color'])
         
+    def plot_time_series(self, test_case: str, method_name: str):
+        """Generate time series plots for specified output times"""
+        plotter = FVMPlotter(self.params)
+        physics_config = create_physics_specific_plotter('euler')
+        
+        # Generate both single variable (density) and multi-variable time series
+        # Single variable (density) for compatibility
+        plotter.plot_time_series(
+            test_case=test_case,
+            method_name=method_name,
+            results=self.results,
+            variable_index=0,  # Density
+            variable_name="Density"
+        )
+        
+        # Multi-variable time series showing all 5 Euler variables
+        if 'time_series_variables' in physics_config:
+            plotter.plot_multi_variable_time_series(
+                test_case=test_case,
+                method_name=method_name,
+                results=self.results,
+                variables=physics_config['time_series_variables']
+            )
+        
         plt.tight_layout()
         
         if self.params.save_plots:

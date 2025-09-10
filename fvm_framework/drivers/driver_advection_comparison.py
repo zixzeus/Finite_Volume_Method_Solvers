@@ -8,16 +8,15 @@ Physics: ∂u/∂t + a∂u/∂x + b∂u/∂y = 0
 """
 
 import numpy as np
-from fvm_framework.utils import FVMPlotter, create_physics_specific_plotter
 import os
 import time
+import sys
 from typing import Dict, List, Tuple, Any, Optional, Union
 from dataclasses import dataclass
 
-import sys
-import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from fvm_framework.utils import FVMPlotter, create_physics_specific_plotter
 from fvm_framework.core.solver import FVMSolver
 from fvm_framework.testcases.testsuite_advection_2D import get_advection_test_case, list_advection_test_cases
 
