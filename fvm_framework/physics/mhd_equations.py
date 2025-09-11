@@ -202,19 +202,21 @@ class MHDEquations2D(ConservationLaw):
         u, v = rho_u/rho, rho_v/rho
         p = self.compute_pressure(state)
         
-        # Sound speed and Alfven speeds
-        cs = np.sqrt(self.gamma * p / rho)
-        ca_x = abs(Bx) / np.sqrt(rho)
-        ca_y = abs(By) / np.sqrt(rho)
+        # Sound speed and Alfven speeds (with numerical safety)
+        rho_safe = max(rho, 1e-15)
+        p_safe = max(p, 1e-15)
+        cs = np.sqrt(self.gamma * p_safe / rho_safe)
+        ca_x = abs(Bx) / np.sqrt(rho_safe)
+        ca_y = abs(By) / np.sqrt(rho_safe)
         
-        # Fast magnetosonic speed
+        # Fast magnetosonic speed (with numerical safety)
         if direction == 0:
-            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + 
-                               np.sqrt((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_x**2)))
+            discriminant = max((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_x**2, 0.0)
+            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + np.sqrt(discriminant)))
             return abs(u) + cf
         else:
-            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + 
-                               np.sqrt((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_y**2)))
+            discriminant = max((cs**2 + ca_x**2 + ca_y**2)**2 - 4*cs**2*ca_y**2, 0.0)
+            cf = np.sqrt(0.5 * (cs**2 + ca_x**2 + ca_y**2 + np.sqrt(discriminant)))
             return abs(v) + cf
     
     def compute_flux_x(self, u: np.ndarray) -> np.ndarray:

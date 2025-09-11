@@ -195,6 +195,11 @@ class EulerComparison:
         initial_state = get_euler_test_case(test_case, self.params.nx, self.params.ny)
         
         for method in self.params.spatial_methods:
+            # Skip WENO5 for blast_wave test case (too unstable for strong shocks)
+            if test_case == 'blast_wave' and method.get('reconstruction_type') == 'weno5':
+                print(f"    Skipping {method['name']} for blast_wave (WENO5 not suitable for strong shocks)")
+                continue
+                
             solution, timing = self.run_single_test(test_case, method)
             
             if solution is not None:

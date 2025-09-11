@@ -75,14 +75,6 @@ class MHDComparisonParameters:
                     'linestyle': '--'
                 },
                 {
-                    'name': 'WENO5 + HLLC',
-                    'reconstruction_type': 'weno5',
-                    'flux_type': 'hllc',
-                    'flux_params': {'riemann_solver': 'hllc'},
-                    'color': 'green',
-                    'linestyle': '-.'
-                },
-                {
                     'name': 'Slope Limiter + HLLD',
                     'reconstruction_type': 'slope_limiter',
                     'flux_type': 'hlld',

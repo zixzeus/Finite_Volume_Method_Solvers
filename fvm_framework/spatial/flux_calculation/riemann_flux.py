@@ -45,11 +45,9 @@ class RiemannFlux(RiemannBasedFluxCalculator):
         # Get Riemann solver
         riemann_solver = self._get_riemann_solver()
         
-        # Get parameters
-        gamma = kwargs.get('gamma', 1.4)
-        
-        # Solve Riemann problem
-        return riemann_solver.solve(left_state, right_state, direction, gamma)
+        # Check if this is a new generic solver
+
+        return riemann_solver.solve(left_state, right_state, physics_equation, direction, **kwargs)
     
     def compute_all_x_fluxes(self, left_states: np.ndarray, right_states: np.ndarray,
                            physics_equation, **kwargs) -> np.ndarray:
@@ -75,10 +73,13 @@ class RiemannFlux(RiemannBasedFluxCalculator):
         # Compute fluxes efficiently
         for j in range(ny):
             for i in range(nx_plus_1):
+                # New generic solver - pass physics_equation
+                flux_kwargs = {k: v for k, v in kwargs.items() if k != 'direction'}
                 fluxes[:, i, j] = riemann_solver.solve(
                     left_states[:, i, j], right_states[:, i, j], 
-                    direction=0, gamma=gamma
+                    physics_equation, 0, **flux_kwargs
                 )
+
         
         return fluxes
     
@@ -98,7 +99,6 @@ class RiemannFlux(RiemannBasedFluxCalculator):
         """
         # Get Riemann solver once for efficiency
         riemann_solver = self._get_riemann_solver()
-        gamma = kwargs.get('gamma', 1.4)
         
         num_vars, nx, ny_plus_1 = left_states.shape
         fluxes = np.zeros((num_vars, nx, ny_plus_1))
@@ -106,9 +106,12 @@ class RiemannFlux(RiemannBasedFluxCalculator):
         # Compute fluxes efficiently
         for i in range(nx):
             for j in range(ny_plus_1):
+
+                # New generic solver - pass physics_equation
+                flux_kwargs = {k: v for k, v in kwargs.items() if k != 'direction'}
                 fluxes[:, i, j] = riemann_solver.solve(
                     left_states[:, i, j], right_states[:, i, j],
-                    direction=1, gamma=gamma
+                    physics_equation, 1, **flux_kwargs
                 )
         
         return fluxes

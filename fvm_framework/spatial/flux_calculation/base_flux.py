@@ -261,17 +261,8 @@ class RiemannBasedFluxCalculator(FluxCalculator):
     def _get_riemann_solver(self):
         """Lazy initialization of Riemann solver"""
         if self.riemann_solver is None:
+            # Try to use new generic Riemann solver first
             from ..riemann_solvers import RiemannSolverFactory
             self.riemann_solver = RiemannSolverFactory.create(self.riemann_solver_type)
         return self.riemann_solver
 
-
-class CentralFluxCalculator(FluxCalculator):
-    """Base class for central flux calculators"""
-    
-    def __init__(self, name: str):
-        super().__init__(name, "central")
-        
-    def needs_wave_speed(self) -> bool:
-        """Central methods usually don't need explicit wave speed"""
-        return False
