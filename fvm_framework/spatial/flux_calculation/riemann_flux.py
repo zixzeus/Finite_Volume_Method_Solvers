@@ -65,7 +65,6 @@ class RiemannFlux(RiemannBasedFluxCalculator):
         """
         # Get Riemann solver once for efficiency
         riemann_solver = self._get_riemann_solver()
-        gamma = kwargs.get('gamma', 1.4)
         
         num_vars, nx_plus_1, ny = left_states.shape
         fluxes = np.zeros((num_vars, nx_plus_1, ny))
