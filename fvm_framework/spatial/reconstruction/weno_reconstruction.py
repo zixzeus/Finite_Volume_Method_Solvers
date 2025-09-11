@@ -183,17 +183,17 @@ class WENOReconstruction(HighOrderReconstruction):
                     u_left[i] = u[ng + n_interior - 1]  # Last interior cell
                     u_right[i] = u[ng + n_interior]     # Right ghost cell
                 elif i <= 1 or i >= n_interior - 1:
-                    # Near boundaries: fall back to lower order
+                    # Near boundaries: fall back to simple linear reconstruction
                     cell_idx = ng + i
                     if i == 1 and n_interior > 1:
-                        # Can use some WENO, but be careful near boundaries
-                        u_left[i] = self._weno3_reconstruct_left(u, cell_idx)
-                        u_right[i] = self._weno3_reconstruct_right(u, cell_idx)
+                        # Simple linear reconstruction for near-boundary
+                        u_left[i] = 0.5 * (u[cell_idx - 1] + u[cell_idx])
+                        u_right[i] = 0.5 * (u[cell_idx] + u[cell_idx + 1])
                     elif i == n_interior - 1 and n_interior > 1:
-                        u_left[i] = self._weno3_reconstruct_left(u, cell_idx)
-                        u_right[i] = self._weno3_reconstruct_right(u, cell_idx)
+                        u_left[i] = 0.5 * (u[cell_idx - 1] + u[cell_idx])
+                        u_right[i] = 0.5 * (u[cell_idx] + u[cell_idx + 1])
                     else:
-                        # Fallback
+                        # Fallback to cell-centered values
                         u_left[i] = u[ng + i - 1]
                         u_right[i] = u[ng + i]
                 else:
@@ -334,15 +334,29 @@ class WENOReconstruction(HighOrderReconstruction):
         return w0 * u0 + w1 * u1 + w2 * u2
     
     def _get_stencil_values(self, u: np.ndarray, indices: list) -> np.ndarray:
-        """Get stencil values with boundary handling"""
+        """Get stencil values with robust boundary handling"""
         n = len(u)
         values = np.zeros(len(indices))
         
         for k, idx in enumerate(indices):
             if idx < 0:
-                values[k] = u[0]  # Extrapolate from left boundary
+                # Linear extrapolation for left boundary
+                if n >= 2:
+                    # Use linear extrapolation: u[0] + (u[0] - u[1]) * |idx|
+                    extrap = u[0] + (u[0] - u[1]) * abs(idx)
+                    # Clamp to reasonable bounds to prevent extreme values
+                    values[k] = max(min(extrap, 10.0 * u[0]), 0.1 * u[0])
+                else:
+                    values[k] = u[0]
             elif idx >= n:
-                values[k] = u[-1]  # Extrapolate from right boundary
+                # Linear extrapolation for right boundary  
+                if n >= 2:
+                    # Use linear extrapolation: u[-1] + (u[-1] - u[-2]) * (idx - (n-1))
+                    extrap = u[-1] + (u[-1] - u[-2]) * (idx - (n - 1))
+                    # Clamp to reasonable bounds to prevent extreme values
+                    values[k] = max(min(extrap, 10.0 * u[-1]), 0.1 * u[-1])
+                else:
+                    values[k] = u[-1]
             else:
                 values[k] = u[idx]
         

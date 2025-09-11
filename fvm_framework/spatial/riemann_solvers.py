@@ -161,7 +161,7 @@ class HLLCSolver(RiemannSolver):
         h_l = (u_left[4] + p_l) / rho_l
         h_r = (u_right[4] + p_r) / rho_r
         h_roe = (sqrt_rho_l * h_l + sqrt_rho_r * h_r) / sqrt_rho_sum
-        c_roe = np.sqrt((gamma - 1.0) * (h_roe - 0.5 * vel_roe**2))
+        c_roe = np.sqrt(np.maximum(1e-15, (gamma - 1.0) * (h_roe - 0.5 * vel_roe**2)))
         
         # Wave speeds
         s_l = min(vel_l - c_l, vel_roe - c_roe)
